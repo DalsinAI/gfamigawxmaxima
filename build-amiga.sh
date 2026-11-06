@@ -217,6 +217,22 @@ if [ ! -f "$B/src/wxmaxima" ] || [ $rc -ne 0 ]; then
     exit 1
 fi
 cp "$B/src/wxmaxima" "$OUT/wxMaxima.debug"
+# ---- diagnostic (this branch only): wxMaxima.diag, linked again with the
+# assert wrapper, and the addresses in tools/diag/lookup.txt looked up
+"$TC/bin/m68k-amigaos-g++" -noixemul -m68040 -O1 -c "$HERE/tools/diag/assert-where.cpp" -o "$B/assert-where.o"
+LT="$B/src/CMakeFiles/wxmaxima.dir/link.txt"
+sed "s| -o wxmaxima | -o wxmaxima.diag $B/assert-where.o -Wl,--wrap=_Z10wxOnAssertPKciS0_S0_S0_ -Wl,--wrap=_Z10wxOnAssertPKciS0_S0_ |" "$LT" > "$B/link-diag.sh"
+grep -q "wxmaxima.diag" "$B/link-diag.sh" || { echo "diag: link line not changed:"; cut -c1-300 "$LT"; exit 1; }
+(cd "$B/src" && sh "$B/link-diag.sh") || { echo "diag link failed"; exit 1; }
+"$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima.diag" "$B/src/wxmaxima.diag"
+W5=$("$TC/bin/m68k-amigaos-nm" "$B/src/wxmaxima.diag" | awk '$3=="__wrap__Z10wxOnAssertPKciS0_S0_S0_"{print $1}')
+echo "diag: wxMaxima.diag $(wc -c < "$OUT/wxMaxima.diag") bytes, wrap5 at 0x$W5"
+grep -v '^#' "$HERE/tools/diag/lookup.txt" | while read -r caller wrap; do
+    [ -n "$caller" ] || continue
+    a=$(printf '0x%x' $(( 0x$W5 + caller - wrap )))
+    echo "diag: caller $caller -> $a:"
+    "$TC/bin/m68k-amigaos-addr2line" -f -C -i -e "$B/src/wxmaxima.diag" "$a" | sed 's/^/    /' | cut -c1-250
+done
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima" "$B/src/wxmaxima"
 ls -l "$OUT/wxMaxima"
 echo "fpuauto: $("$TC/bin/m68k-amigaos-objdump" -d "$OUT/wxMaxima.debug" | grep -c 'jsr.*<___wrap_' || true) wrapped calls in wxMaxima"
