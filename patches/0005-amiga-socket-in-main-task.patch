@@ -1,93 +1,185 @@
 diff --git a/src/Maxima.cpp b/src/Maxima.cpp
-index 20b774a..49aa545 100644
+index 20b774a..64b1a14 100644
 --- a/src/Maxima.cpp
 +++ b/src/Maxima.cpp
-@@ -82,10 +82,25 @@ Maxima::Maxima(wxSocketBase *socket, Configuration *config) :
+@@ -39,6 +39,8 @@
+ #include <sys/socket.h>
+ #endif
+ 
++#include <algorithm>
++
+ wxDEFINE_EVENT(EVT_MAXIMA, wxThreadEvent);
+ 
+ #define INPUT_RESTART_PERIOD 100
+@@ -77,15 +79,132 @@ Maxima::Maxima(wxSocketBase *socket, Configuration *config) :
+   
+   // COMPLETELY isolate the socket from the main thread event loop.
+   // This is crucial to avoid GLib assertion failures related to FD monitoring.
++#ifdef __AMIGA__
++  // bsdsocket.library is opened per task and wx's sockets belong to the main
++  // task, so there is no worker thread here: the main task's event loop
++  // (which waits on the socket with WaitSelect) tells us when Maxima has sent
++  // something, and we never wait on the socket ourselves, so the window
++  // stays responsive.
++  m_socket->SetFlags(wxSOCKET_NOWAIT);
++  m_socket->SetEventHandler(*this);
++  m_socket->SetNotify(wxSOCKET_INPUT_FLAG | wxSOCKET_LOST_FLAG);
++  Bind(wxEVT_SOCKET, &Maxima::AmigaSocketEvent, this);
++  m_amigaWriteRetry.Bind(wxEVT_TIMER, [this](wxTimerEvent &) { AmigaSend(); });
++  m_socket->Notify(true);
++#else
+   m_socket->SetNotify(0);
+   m_socket->Notify(false);
    m_socket->SetFlags(wxSOCKET_BLOCK); // We will use WaitForRead with timeout in thread.
    m_socket->SetTimeout(1);
  
-+#ifdef __AMIGA__
-+  // bsdsocket.library is opened per task, and wx's sockets belong to the
-+  // main task: the socket is polled from the main task's event loop here,
-+  // by a timer, instead of from a worker thread
-+  m_lastProcessTime = wxGetLocalTimeMillis();
-+  m_pollTimer.Bind(wxEVT_TIMER, [this](wxTimerEvent &) {
-+    if (PollOnce(stop_token{}, m_lastProcessTime, 0) < 0)
-+      m_pollTimer.Stop();
-+  });
-+  m_pollTimer.Start(20);
-+#else
    m_workerThread = jthread([this](stop_token stopToken) { WorkerThread(stopToken); });
 +#endif
++}
++
++#ifdef __AMIGA__
++void Maxima::AmigaSocketEvent(wxSocketEvent &event) {
++  if (event.GetSocketEvent() == wxSOCKET_LOST) {
++    m_amigaWriteRetry.Stop();
++    wxThreadEvent *evt = new wxThreadEvent(EVT_MAXIMA);
++    evt->SetInt(DISCONNECTED);
++    QueueEvent(evt);
++    return;
++  }
++  if (event.GetSocketEvent() != wxSOCKET_INPUT)
++    return;
++
++  // everything that is there now, in big pieces
++  char buf[4096];
++  for (;;) {
++    m_socket->Read(buf, sizeof(buf));
++    const std::size_t got = m_socket->LastReadCount();
++    if (got == 0)
++      break;
++    m_amigaRawInput.append(buf, got);
++    if (got < sizeof(buf))
++      break;
++  }
++  // Maxima's line ends are \r\n, and a NUL ends nothing here: both go
++  m_amigaRawInput.erase(std::remove_if(m_amigaRawInput.begin(), m_amigaRawInput.end(),
++                                       [](char c) { return c == '\r' || c == '\0'; }),
++                        m_amigaRawInput.end());
++  if (m_amigaRawInput.empty())
++    return;
++
++  // keep an unfinished UTF-8 character for next time
++  std::size_t complete = m_amigaRawInput.size();
++  for (std::size_t back = 1; back <= 3 && back <= m_amigaRawInput.size(); back++) {
++    const unsigned char c = m_amigaRawInput[m_amigaRawInput.size() - back];
++    if ((c & 0xC0) == 0x80)
++      continue;                 // a continuation byte: look further back
++    std::size_t need = 1;
++    if ((c & 0xE0) == 0xC0) need = 2;
++    else if ((c & 0xF0) == 0xE0) need = 3;
++    else if ((c & 0xF8) == 0xF0) need = 4;
++    if (need > back)
++      complete = m_amigaRawInput.size() - back;
++    break;
++  }
++  wxString text = wxString::FromUTF8(m_amigaRawInput.data(), complete);
++  if (text.IsEmpty() && complete > 0)
++    text = wxString::From8BitData(m_amigaRawInput.data(), complete);
++  m_amigaRawInput.erase(0, complete);
++  if (text.IsEmpty())
++    return;
++
++  m_processingBuffer += text;
++  if (m_xmlInspector) {
++    std::lock_guard<std::mutex> lock(m_interpretedQueueMutex);
++    m_interpretedQueue.push_back({STRING_FOR_XMLINSPECTOR, text});
++    if (!m_readPendingQueued.exchange(true)) {
++      CallAfter([this]{ ReadSocket(); });
++    }
++  }
++  ProcessData(stop_token{});
  }
  
++void Maxima::AmigaSend() {
++  std::vector<std::vector<char>> toWrite;
++  {
++    std::lock_guard<std::mutex> lock(m_outputQueueMutex);
++    toWrite.swap(m_outputQueue);
++  }
++  for (std::size_t i = 0; i < toWrite.size(); i++) {
++    const auto &data = toWrite[i];
++    m_socket->Write(data.data(), data.size());
++    const std::size_t written = m_socket->LastWriteCount();
++    if (m_socket->Error() && (m_socket->LastError() != wxSOCKET_WOULDBLOCK)) {
++      wxThreadEvent *sendevent = new wxThreadEvent(EVT_MAXIMA);
++      sendevent->SetInt(WRITE_ERROR);
++      QueueEvent(sendevent);
++      continue;
++    }
++    if (written < data.size()) {
++      // The stack's send buffer is full (the setup code alone is 89 KB): the
++      // rest, and everything queued after it, goes first a little later.
++      std::vector<std::vector<char>> rest;
++      rest.emplace_back(data.begin() + written, data.end());
++      for (std::size_t j = i + 1; j < toWrite.size(); j++)
++        rest.push_back(std::move(toWrite[j]));
++      {
++        std::lock_guard<std::mutex> lock(m_outputQueueMutex);
++        for (auto &later : m_outputQueue)
++          rest.push_back(std::move(later));
++        m_outputQueue.swap(rest);
++      }
++      m_amigaWriteRetry.StartOnce(20);
++      return;
++    }
++  }
++}
++#endif
++
  Maxima::~Maxima() {
 +#ifdef __AMIGA__
-+  m_pollTimer.Stop();
++  m_amigaWriteRetry.Stop();
++  if (m_socket)
++    m_socket->Notify(false);
 +#endif
    m_workerThread.request_stop();
  
    // Defensively drop any handlers that might still target this object before it
-@@ -187,13 +202,22 @@ void Maxima::ReadSocket() {
- void Maxima::WorkerThread(stop_token stopToken) {
-   wxMilliClock_t lastProcessTime = wxGetLocalTimeMillis();
-   while (!stopToken.stop_requested()) {
-+    const int r = PollOnce(stopToken, lastProcessTime, 50);
-+    if (r < 0)
-+      break;
-+    if (r == 0)
-+      wxMilliSleep(20);
-+  }
-+}
-+
-+int Maxima::PollOnce(stop_token stopToken, wxMilliClock_t &lastProcessTime, long waitMs) {
-     bool activity = false;
- 
-     if (!m_socket->IsConnected()) {
-         wxThreadEvent *evt = new wxThreadEvent(EVT_MAXIMA);
-         evt->SetInt(DISCONNECTED);
-         QueueEvent(evt);
--        break;
-+        return -1;
-     }
- 
-     // 1. Handle Output Queue
-@@ -216,7 +240,7 @@ void Maxima::WorkerThread(stop_token stopToken) {
-     }
- 
-     // 2. Handle Input
--    if (m_socket->WaitForRead(0, 50)) {
-+    if (m_socket->WaitForRead(0, waitMs)) {
-         activity = true;
-         wxString incomingData;
-         while (m_socket->IsData()) {
-@@ -246,9 +270,8 @@ void Maxima::WorkerThread(stop_token stopToken) {
-         if (!m_processingBuffer.IsEmpty()) {
-             ProcessData(stopToken);
-         }
--        wxMilliSleep(20);
-     }
--  }
-+    return activity ? 1 : 0;
+@@ -141,6 +260,10 @@ bool Maxima::Write(const void *buffer, std::size_t length) {
+       std::lock_guard<std::mutex> lock(m_outputQueueMutex);
+       m_outputQueue.push_back(std::move(data));
+   }
++#ifdef __AMIGA__
++  if (!m_amigaWriteRetry.IsRunning())
++    CallAfter([this]{ AmigaSend(); });
++#endif
+   return true;
  }
  
- void Maxima::ProcessData(stop_token stopToken)
 diff --git a/src/Maxima.h b/src/Maxima.h
-index 023a11a..e7a9697 100644
+index 023a11a..b417f82 100644
 --- a/src/Maxima.h
 +++ b/src/Maxima.h
-@@ -220,6 +220,15 @@ private:
+@@ -38,6 +38,7 @@
+ #include <wx/string.h>
+ #include <wx/timer.h>
+ #include <memory>
++#include <string>
+ #include <thread>
+ #include <atomic>
+ #include <mutex>
+@@ -220,6 +221,16 @@ private:
      reads it, and sends events to the main thread for each interpreted item.
      */
    void WorkerThread(stop_token stopToken);
-+  /*! One round of the worker's work: send what is queued, read what came,
-+      interpret it. waitMs: how long to wait for data. Returns -1 when the
-+      socket is gone, 1 when something was done, 0 otherwise. */
-+  int PollOnce(stop_token stopToken, wxMilliClock_t &lastProcessTime, long waitMs);
 +#ifdef __AMIGA__
-+  //! Polls the socket from the main task (see the constructor)
-+  wxTimer m_pollTimer;
-+  wxMilliClock_t m_lastProcessTime = 0;
++  //! Reads what Maxima sent, when the event loop says there is some
++  void AmigaSocketEvent(wxSocketEvent &event);
++  //! Sends what is queued, as far as the socket takes it
++  void AmigaSend();
++  //! Bytes read but not yet a whole UTF-8 character
++  std::string m_amigaRawInput;
++  //! Sends the rest when the socket took only part
++  wxTimer m_amigaWriteRetry;
 +#endif
  
    /*! Search m_socketInputData for complete commands and send them to wxMaxima
