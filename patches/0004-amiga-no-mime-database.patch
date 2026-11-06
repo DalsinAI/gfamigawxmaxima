@@ -1,0 +1,74 @@
+diff --git a/src/Configuration.cpp b/src/Configuration.cpp
+index 37bb756..9b250ef 100644
+--- a/src/Configuration.cpp
++++ b/src/Configuration.cpp
+@@ -294,11 +294,17 @@ void Configuration::ResetAllToDefaults() {
+   m_useInternalHelpBrowser = OfferInternalHelpBrowser();
+ #ifdef __WXGTK__
+   m_helpBrowserUserLocation = wxS("xdg-open");
++#elif defined __AMIGA__
++  // The Amiga has no MIME database: Workbench opens HTML with the file
++  // type's default tool (see wxMaxima::LaunchHelpBrowser)
++  m_helpBrowserUserLocation = wxEmptyString;
+ #else
+   // see https://docs.wxwidgets.org/3.0/classwx_mime_types_manager.html
+   auto *manager = wxTheMimeTypesManager;
+   wxFileType *filetype = manager->GetFileTypeFromExtension("html");
+-  m_helpBrowserUserLocation = filetype->GetOpenCommand({});
++  if (filetype)
++    m_helpBrowserUserLocation = filetype->GetOpenCommand({});
++  delete filetype;
+ #endif
+ 
+   m_TeXExponentsAfterSubscript = false;
+diff --git a/src/dialogs/TroubleshootingDialog.cpp b/src/dialogs/TroubleshootingDialog.cpp
+index b75f839..e10de8d 100644
+--- a/src/dialogs/TroubleshootingDialog.cpp
++++ b/src/dialogs/TroubleshootingDialog.cpp
+@@ -90,11 +90,16 @@ TroubleshootingResult CheckExternalBrowser() {
+   if (!xdgOpen.IsEmpty())
+     return Result(check, TroubleshootingStatus::ok, xdgOpen);
+ #endif
++#ifdef __AMIGA__
++  // no MIME database here: Workbench opens HTML with its file type's tool
++  return Result(check, TroubleshootingStatus::ok, _("Workbench (the HTML file type's default tool)"));
++#else
+   std::unique_ptr<wxFileType> type(wxTheMimeTypesManager->GetFileTypeFromExtension(wxS("html")));
+   wxString command;
+   if (type && type->GetOpenCommand(&command, wxFileType::MessageParameters(wxS("x.html"))) &&
+       !command.IsEmpty())
+     return Result(check, TroubleshootingStatus::ok, command);
++#endif
+   return Result(check, TroubleshootingStatus::warning,
+                 _("No program for opening HTML files was found."),
+                 _("Help that is shown in a browser, and links in the worksheet, may "
+diff --git a/src/wxMaxima.cpp b/src/wxMaxima.cpp
+index eb98c5c..c66d917 100644
+--- a/src/wxMaxima.cpp
++++ b/src/wxMaxima.cpp
+@@ -1792,6 +1792,17 @@ void wxMaxima::LaunchHelpBrowser(wxString uri) {
+         if (!wxLaunchDefaultBrowser(uri))
+           wxLogMessage(_("Launching the system's default help browser failed."));
+       } else if (m_configuration.AutodetectHelpBrowser()) {
++#ifdef __AMIGA__
++        // Workbench opens the page with the HTML file type's default tool
++        wxURI parsed(uri);
++        wxString target = uri;
++        if (parsed.GetScheme() == wxS("file"))
++          target = wxFileName::URLToFileName(uri).GetFullPath();
++        if (wxLaunchDefaultApplication(target))
++          wxLogMessage(_("Opened %s with Workbench."), target);
++        else
++          wxLogMessage(_("Workbench could not open %s."), target);
++#else
+         // see https://docs.wxwidgets.org/3.0/classwx_mime_types_manager.html
+         auto *manager = wxTheMimeTypesManager;
+         wxFileType *filetype = manager->GetFileTypeFromExtension("html");
+@@ -1814,6 +1825,7 @@ void wxMaxima::LaunchHelpBrowser(wxString uri) {
+               wxLogMessage(_("Launching the system's default help browser failed."));
+ #endif
+           }
++#endif
+       } else {
+         std::vector<char *>argv;
+         wxCharBuffer commandnamebuffer = Configuration::FindProgram(m_configuration.HelpBrowserUserLocation()).mb_str();
