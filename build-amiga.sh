@@ -54,7 +54,11 @@ WXT="$WORK/deps/gfopenwxtoolkit"; WXB="$WORK/gfopenwx"
 if [ ! -x "$WXB/out/sdk/bin/wx-config" ] || [ "$(cat "$WXB/.rev" 2>/dev/null)" != "$WXT_COMMIT" ]; then
     log "toolkit $WXT_COMMIT: building its SDK"
     if ! STOVE="$STOVE" WORK="$WXB" OUT="$WXB/out" JOBS=$JOBS timeout "$(left)" sh "$WXT/build-amiga.sh" > "$WORK/wx.log" 2>&1; then
-        [ "$(left)" -le 5 ] && resume "toolkit"
+        if [ "$(left)" -le 5 ]; then
+            echo "toolkit: $(find "$WXB" -name '*.o' | wc -l) objects; last of its log:"
+            tail -4 "$WORK/wx.log" | cut -c1-200
+            resume "toolkit"
+        fi
         tail -40 "$WORK/wx.log"; exit 1
     fi
     echo "$WXT_COMMIT" > "$WXB/.rev"
