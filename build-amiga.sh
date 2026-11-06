@@ -54,7 +54,14 @@ WXT="$WORK/deps/gfopenwxtoolkit"; WXB="$WORK/gfopenwx"
 if [ ! -x "$WXB/out/sdk/bin/wx-config" ] || [ "$(cat "$WXB/.rev" 2>/dev/null)" != "$WXT_COMMIT" ]; then
     log "toolkit $WXT_COMMIT: building its SDK"
     if ! STOVE="$STOVE" WORK="$WXB" OUT="$WXB/out" JOBS=$JOBS timeout "$(left)" sh "$WXT/build-amiga.sh" > "$WORK/wx.log" 2>&1; then
-        [ "$(left)" -le 5 ] && resume "toolkit"
+        if [ "$(left)" -le 5 ]; then
+            echo "toolkit: $(find "$WXB" -name '*.o' | wc -l) objects; GUI objects newer than its setup.h: $(find "$WXB/gui/obj" -name '*.o' -newer "$WXB/gui/wx/setup.h" 2>/dev/null | wc -l) of $(grep -c . "$WXB/gui/sources.txt" 2>/dev/null); load $(cut -d' ' -f1-3 /proc/loadavg), $(nproc) cores"
+            ls -la --time-style=+%T "$WXB/gui/wx/setup.h" 2>/dev/null
+            find "$WXB/gui/obj" -name '*.o' -newer "$WXB/gui/wx/setup.h" -printf '%TT %f\n' 2>/dev/null | sort | sed -n '1p;$p'
+            echo "last of its log:"
+            grep -v "^-rw\|^drw\|^total" "$WORK/wx.log" | tail -25 | cut -c1-220; date; ls -la --time-style=+%T "$WXB" "$WXB/gui" 2>/dev/null | head -30
+            resume "toolkit"
+        fi
         tail -40 "$WORK/wx.log"; exit 1
     fi
     echo "$WXT_COMMIT" > "$WXB/.rev"
@@ -88,17 +95,28 @@ if [ ! -f "$TB" ] || ! echo "$MAXIMA_SHA256  $TB" | sha256sum -c - >/dev/null 2>
     mv "$TB.part" "$TB"
 fi
 MX="$WORK/maxima-$MAXIMA_VERSION"; MXS="$WORK/maxima-stage"
-MSUM=$( (echo "$HOSTCLISP"; cat "$CLC"/host-*/.done "$HERE/scripts/make-loadlist.py") | sha256sum | cut -c1-16)
+# the compile depends on the host CLISP only; it goes on where it stopped
+# (Maxima's defsystem skips files already compiled), and the Amiga's load
+# list is made again on its own when its script changes
+MSUM=$( (echo "$HOSTCLISP"; cat "$CLC"/host-*/.done) | sha256sum | cut -c1-16)
 if [ "$(cat "$MXS/.built" 2>/dev/null)" != "$MSUM" ]; then
-    [ "$(left)" -gt 200 ] || resume "Maxima"
-    log "Maxima $MAXIMA_VERSION: compiling with $HOSTCLISP"
-    rm -rf "$MX" "$MXS"; mkdir -p "$MX"
-    tar xzf "$TB" -C "$MX" --strip-components=1
-    ( cd "$MX" && FORCE_UNSAFE_CONFIGURE=1 ./configure --enable-clisp --with-clisp="$HOSTCLISP" \
-        --disable-build-docs --prefix="$MXS" > "$WORK/maxima-configure.log" 2>&1 ) \
-        || { tail -30 "$WORK/maxima-configure.log"; exit 1; }
-    ( cd "$MX/src" && nice -n 19 make clisp > "$WORK/maxima-make.log" 2>&1 ) \
-        || { grep -n -B3 -A8 '\*\*\* -' "$WORK/maxima-make.log" | head -40; tail -20 "$WORK/maxima-make.log"; exit 1; }
+    [ "$(left)" -gt 120 ] || resume "Maxima"
+    # (a tree configured for this CLISP before the marker existed counts)
+    [ -f "$MX/.configured" ] || ! grep -qF -- "$HOSTCLISP" "$MX/config.status" 2>/dev/null || echo "$MSUM" > "$MX/.configured"
+    if [ "$(cat "$MX/.configured" 2>/dev/null)" != "$MSUM" ]; then
+        log "Maxima $MAXIMA_VERSION: configuring for $HOSTCLISP"
+        rm -rf "$MX" "$MXS"; mkdir -p "$MX"
+        tar xzf "$TB" -C "$MX" --strip-components=1
+        ( cd "$MX" && FORCE_UNSAFE_CONFIGURE=1 ./configure --enable-clisp --with-clisp="$HOSTCLISP" \
+            --disable-build-docs --prefix="$MXS" > "$WORK/maxima-configure.log" 2>&1 ) \
+            || { tail -30 "$WORK/maxima-configure.log"; exit 1; }
+        echo "$MSUM" > "$MX/.configured"
+    fi
+    log "Maxima: compiling ($(find "$MX/src/binary-clisp" -name '*.fas' 2>/dev/null | wc -l) files so far, budget $(left) s)"
+    if ! ( cd "$MX/src" && timeout "$(( $(left) - 60 ))" nice -n 19 make clisp > "$WORK/maxima-make.log" 2>&1 ); then
+        [ "$(left)" -le 65 ] && resume "Maxima, $(find "$MX/src/binary-clisp" -name '*.fas' | wc -l) files so far"
+        grep -n -B3 -A8 '\*\*\* -' "$WORK/maxima-make.log" | head -40; tail -20 "$WORK/maxima-make.log"; exit 1
+    fi
     ( cd "$MX" && nice -n 19 make install > "$WORK/maxima-install.log" 2>&1 ) \
         || { tail -30 "$WORK/maxima-install.log"; exit 1; }
     # Maxima's own load order (its defsystem, verbose), for the Amiga's image
@@ -110,9 +128,14 @@ if [ "$(cat "$MXS/.built" 2>/dev/null)" != "$MSUM" ]; then
 EOF
     ( cd "$MX/src" && "$HOSTCLISP" -norc -q "$WORK/maxima-order.lisp" > "$WORK/maxima-order.log" 2>&1 ) \
         || { tail -20 "$WORK/maxima-order.log"; exit 1; }
-    python3 -I "$HERE/scripts/make-loadlist.py" "$WORK/maxima-order.log" "$MAXIMA_VERSION" "$WORK/loadmaxima.lisp"
+    rm -f "$WORK/loadmaxima.sum"
     echo "$MSUM" > "$MXS/.built"
     log "Maxima compiled: $(find "$MX/src/binary-clisp" -name '*.fas' | wc -l) files"
+fi
+LSUM=$( (echo "$MSUM"; cat "$HERE/scripts/make-loadlist.py") | sha256sum | cut -c1-16)
+if [ "$(cat "$WORK/loadmaxima.sum" 2>/dev/null)" != "$LSUM" ]; then
+    python3 -I "$HERE/scripts/make-loadlist.py" "$WORK/maxima-order.log" "$MAXIMA_VERSION" "$WORK/loadmaxima.lisp"
+    echo "$LSUM" > "$WORK/loadmaxima.sum"
 fi
 
 # ---- 4 fpuauto: libfpuauto.a from its fpuauto.S, as its build-amiga.sh makes it
@@ -137,17 +160,26 @@ SPECS="$HERE/scripts/m68k-soft-m68040.specs"
 SRC="$WORK/wxmaxima"; B="$WORK/wxbuild"
 PSUM=$(cat "$HERE"/patches/*.patch | sha256sum | cut -c1-16)
 if [ "$(cat "$SRC/.patched" 2>/dev/null)" != "$WXMAXIMA_COMMIT-$PSUM" ]; then
-    rm -rf "$SRC" "$B"; mkdir -p "$SRC"
-    git -C "$SRC" init -q
-    git -C "$SRC" fetch -q --depth 1 "$WXMAXIMA_GIT" "$WXMAXIMA_COMMIT"
-    git -C "$SRC" checkout -q FETCH_HEAD
-    [ "$(git -C "$SRC" rev-parse HEAD)" = "$WXMAXIMA_COMMIT" ] || { echo "wxMaxima commit mismatch"; exit 1; }
+    # a fresh patched tree, then only the files that changed go into SRC, so
+    # the next make rebuilds what the patches touched, not everything
+    NEW="$WORK/wxmaxima.new"; rm -rf "$NEW"; mkdir -p "$NEW"
+    git -C "$NEW" init -q
+    git -C "$NEW" fetch -q --depth 1 "$WXMAXIMA_GIT" "$WXMAXIMA_COMMIT"
+    git -C "$NEW" checkout -q FETCH_HEAD
+    [ "$(git -C "$NEW" rev-parse HEAD)" = "$WXMAXIMA_COMMIT" ] || { echo "wxMaxima commit mismatch"; exit 1; }
     for p in "$HERE"/patches/*.patch; do
-        patch -s -d "$SRC" -p1 < "$p" || { echo "patch failed: $p"; exit 1; }
+        patch -s -d "$NEW" -p1 < "$p" || { echo "patch failed: $p"; exit 1; }
     done
+    rm -rf "$NEW/.git"
+    if [ -d "$SRC" ]; then
+        python3 -I "$HERE/scripts/sync-tree.py" "$NEW" "$SRC"
+        rm -rf "$NEW"
+    else
+        mv "$NEW" "$SRC"
+    fi
     echo "$WXMAXIMA_COMMIT-$PSUM" > "$SRC/.patched"
 fi
-CSUM=$( (cat "$0" "$HERE/cmake/toolchain-m68k-amigaos.cmake" "$HERE"/cmake/Platform/*.cmake; echo "$WXT_COMMIT") | sha256sum | cut -c1-16)
+CSUM=$( (echo "cmake options 1"; cat "$HERE/cmake/toolchain-m68k-amigaos.cmake" "$HERE"/cmake/Platform/*.cmake; echo "$WXT_COMMIT") | sha256sum | cut -c1-16)
 if [ "$(cat "$B/.configured" 2>/dev/null)" != "$CSUM" ]; then
     rm -rf "$B"; mkdir -p "$B"
     (cd "$B" && cmake "$SRC" -G "Unix Makefiles" \
@@ -166,11 +198,20 @@ fi
 [ "$(left)" -gt 30 ] || resume "wxMaxima"
 log "wxMaxima: make (budget $(left) s)"
 set +e
+# what is still running just before the time runs out, for the RESUME note
+( sleep $(( $(left) - 15 )) 2>/dev/null && ps -eo etimes=,args= | grep -E 'cc1plus|collect2|/ld |ld\.bfd' | grep -v grep \
+    | sed 's/ -[^ ]*//g' | cut -c1-200 > "$B/running.txt" ) &
+psw=$!
 (cd "$B" && timeout "$(left)" nice -n 19 make -k -j"$JOBS" wxmaxima > make.log 2>&1)
 rc=$?
+kill "$psw" 2>/dev/null || true
 set -e
 if [ ! -f "$B/src/wxmaxima" ] || [ $rc -ne 0 ]; then
-    [ "$(left)" -le 5 ] && resume "wxMaxima, $(find "$B" -name '*.o' | wc -l) objects so far"
+    if [ "$(left)" -le 5 ]; then
+        grep -v '^\s*$' "$B/make.log" | grep -E '^\[|Linking|Building' | tail -6 | cut -c1-200
+        echo "running then:"; cat "$B/running.txt" 2>/dev/null | head -12
+        resume "wxMaxima, $(find "$B" -name '*.o' | wc -l) objects so far"
+    fi
     grep -E 'error|Error|undefined reference' "$B/make.log" | cut -c1-300 | sort | uniq -c | sort -rn | head -50
     tail -15 "$B/make.log" | cut -c1-300
     exit 1

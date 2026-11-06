@@ -36,6 +36,9 @@ with open(out, "w") as f:
     for k, n in items:
         f.write("  (:%s \"%s\")\n" % (k, n))
     f.write("  ))\n  (load (amiga-maxima-file (first f) (second f)) :verbose nil))\n")
+    # AmigaOS has no /usr volume: Maxima's message catalogues are looked for
+    # only under MAXIMA_PREFIX (Maxima adds that at start)
+    f.write("(setq intl::*locale-directories* nil)\n")
     f.write("(ext:saveinitmem (concatenate 'string *amiga-maxima-prefix* \"/maxima.mem\")\n"
             "                 :init-function (function cl-user::run))\n")
     f.write("(ext:exit)\n")

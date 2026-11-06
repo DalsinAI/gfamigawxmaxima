@@ -50,16 +50,21 @@ static int exists(const char *name)
     return 1;
 }
 
-/* append s to line, in quotes when it has a space or is empty */
+/* append s to line as one AmigaDOS argument. Quoted when asked, or when it
+   has a space, ; (which starts a comment), a quote or a star, or is empty;
+   inside quotes " is *" and * is ** */
 static int add(const char *s, int quote)
 {
     size_t len = strlen(line);
-    int q = quote || !*s || strchr(s, ' ') != NULL;
-    if (len + strlen(s) + 4 >= sizeof line) return 0;
+    const char *p;
+    int q = quote || !*s || strpbrk(s, " ;\"*\t") != NULL;
+    if (len + 2 * strlen(s) + 4 >= sizeof line) return 0;
     if (len) line[len++] = ' ';
     if (q) line[len++] = '"';
-    strcpy(line + len, s);
-    len += strlen(s);
+    for (p = s; *p; p++) {
+        if (q && (*p == '"' || *p == '*')) line[len++] = '*';
+        line[len++] = *p;
+    }
     if (q) line[len++] = '"';
     line[len] = 0;
     return 1;
