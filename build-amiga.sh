@@ -233,7 +233,16 @@ grep -v '^#' "$HERE/tools/diag/lookup.txt" | while read -r caller wrap; do
     a=$(printf '0x%x' $(( 0x$W5 + caller - wrap )))
     echo "diag: caller $caller -> $a:"
     "$TC/bin/m68k-amigaos-addr2line" -f -C -i -e "$B/src/wxmaxima.diag" "$a" 2>&1 | sed 's/^/    /' | cut -c1-250 || true
-    "$TC/bin/m68k-amigaos-nm" -n -C "$B/src/wxmaxima.diag" | awk -v A="$a" 'BEGIN{t=strtonum(A)} {v=strtonum("0x"$1); if (v<=t) l=$0; else {print "    nm: " l; exit}}' || true
+    "$TC/bin/m68k-amigaos-nm" -n -C "$B/src/wxmaxima.diag" | python3 -I -c 'import sys
+t=int(sys.argv[1],16); last=""
+for l in sys.stdin:
+    p=l.split(None,2)
+    if len(p)<3: continue
+    try: v=int(p[0],16)
+    except ValueError: continue
+    if v>t: break
+    last=l.strip()
+print("    nm:", last, "+", hex(t-int(last.split()[0],16)) if last else "")' "$a" || true
 done
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima" "$B/src/wxmaxima"
 ls -l "$OUT/wxMaxima"
