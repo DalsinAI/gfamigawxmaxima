@@ -195,8 +195,8 @@ cp "$SRC/COPYING" "$P/COPYING"
 ( cd "$WORK/pkg" && find . -type f | sort | xargs sha256sum ) > "$OUT/SHA256SUMS"
 du -sh "$P" | sed 's/^/package: /'
 # the package as one tar.gz, and as an LhA archive for the Amiga (our own
-# packer; LHA_METHOD=lh0 stores, quick for labs; auto packs, for releases)
+# packer, one core per file; LHA_METHOD=lh0 only stores)
 tar -C "$WORK/pkg" -czf "$OUT/wxMaxima-$WXMAXIMA_VERSION.tgz" wxMaxima
 ls -l "$OUT/wxMaxima-$WXMAXIMA_VERSION.tgz"
-python3 -I "$HERE/tools/mklha.py" "$P" "$OUT/wxMaxima-$WXMAXIMA_VERSION.lha" "${LHA_METHOD:-lh0}"
+python3 -I "$HERE/tools/mklha.py" "$P" "$OUT/wxMaxima-$WXMAXIMA_VERSION.lha" "${LHA_METHOD:-auto}"
 log "DONE"
