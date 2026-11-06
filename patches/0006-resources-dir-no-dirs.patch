@@ -1,0 +1,24 @@
+diff --git a/src/Dirstructure.cpp b/src/Dirstructure.cpp
+index 65d610e..a6815b1 100644
+--- a/src/Dirstructure.cpp
++++ b/src/Dirstructure.cpp
+@@ -109,15 +109,16 @@ wxString Dirstructure::ResourcesDir() {
+     // If the binary is in a source or bin folder the resources dir is one level
+     // above
+     wxArrayString dirs = exe.GetDirs();
+-    if ((dirs.Last().Upper() == wxS("SRC")) ||
+-        (dirs.Last().Upper() == wxS("BIN"))) {
++    if (!dirs.IsEmpty() &&
++        ((dirs.Last().Upper() == wxS("SRC")) ||
++         (dirs.Last().Upper() == wxS("BIN")))) {
+       exe.RemoveLastDir();
+       dirs = exe.GetDirs();
+     }
+ 
+     // If the binary is in the wxMaxima folder the resources dir is two levels
+     // above as we are in MacOS/wxmaxima
+-    if ((dirs.Last().Upper() == wxS("MACOS")))
++    if (!dirs.IsEmpty() && (dirs.Last().Upper() == wxS("MACOS")))
+       exe.RemoveLastDir();
+ 
+     // If there is a Resources folder the resources are there
