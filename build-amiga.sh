@@ -223,15 +223,17 @@ cp "$B/src/wxmaxima" "$OUT/wxMaxima.debug"
 LT="$B/src/CMakeFiles/wxmaxima.dir/link.txt"
 sed "s| -o wxmaxima | -o wxmaxima.diag $B/assert-where.o -Wl,--wrap=_Z10wxOnAssertPKciS0_S0_S0_ -Wl,--wrap=_Z10wxOnAssertPKciS0_S0_ |" "$LT" > "$B/link-diag.sh"
 grep -q "wxmaxima.diag" "$B/link-diag.sh" || { echo "diag: link line not changed:"; cut -c1-300 "$LT"; exit 1; }
-(cd "$B/src" && sh "$B/link-diag.sh") || { echo "diag link failed"; exit 1; }
+(cd "$B/src" && sh "$B/link-diag.sh" > "$B/link-diag.log" 2>&1) || { grep -v "duplicate section" "$B/link-diag.log" | tail -20; echo "diag link failed"; exit 1; }
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima.diag" "$B/src/wxmaxima.diag"
-W5=$("$TC/bin/m68k-amigaos-nm" "$B/src/wxmaxima.diag" | awk '$3=="__wrap__Z10wxOnAssertPKciS0_S0_S0_"{print $1}')
+W5=$("$TC/bin/m68k-amigaos-nm" "$B/src/wxmaxima.diag" | awk '$3=="__wrap__Z10wxOnAssertPKciS0_S0_S0_"||$3=="___wrap__Z10wxOnAssertPKciS0_S0_S0_"{print $1}' | head -1)
+ls "$TC/bin/" | grep -E "addr2line|nm$|objdump" | tr '\n' ' '; echo
 echo "diag: wxMaxima.diag $(wc -c < "$OUT/wxMaxima.diag") bytes, wrap5 at 0x$W5"
 grep -v '^#' "$HERE/tools/diag/lookup.txt" | while read -r caller wrap; do
     [ -n "$caller" ] || continue
     a=$(printf '0x%x' $(( 0x$W5 + caller - wrap )))
     echo "diag: caller $caller -> $a:"
-    "$TC/bin/m68k-amigaos-addr2line" -f -C -i -e "$B/src/wxmaxima.diag" "$a" | sed 's/^/    /' | cut -c1-250
+    "$TC/bin/m68k-amigaos-addr2line" -f -C -i -e "$B/src/wxmaxima.diag" "$a" 2>&1 | sed 's/^/    /' | cut -c1-250 || true
+    "$TC/bin/m68k-amigaos-nm" -n -C "$B/src/wxmaxima.diag" | awk -v A="$a" 'BEGIN{t=strtonum(A)} {v=strtonum("0x"$1); if (v<=t) l=$0; else {print "    nm: " l; exit}}' || true
 done
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima" "$B/src/wxmaxima"
 ls -l "$OUT/wxMaxima"
