@@ -1,0 +1,39 @@
+diff --git a/src/Maxima.cpp b/src/Maxima.cpp
+index 49aa545..1c4bd51 100644
+--- a/src/Maxima.cpp
++++ b/src/Maxima.cpp
+@@ -229,13 +229,32 @@ int Maxima::PollOnce(stop_token stopToken, wxMilliClock_t &lastProcessTime, long
+         }
+     }
+     
+-    for (const auto& data : toWrite) {
++    for (std::size_t i = 0; i < toWrite.size(); i++) {
++        const auto& data = toWrite[i];
+         m_socket->Write(data.data(), data.size());
+         activity = true;
+-        if (m_socket->Error()) {
++        const std::size_t written = m_socket->LastWriteCount();
++        if (m_socket->Error() && (m_socket->LastError() != wxSOCKET_WOULDBLOCK) &&
++            (m_socket->LastError() != wxSOCKET_TIMEDOUT)) {
+             wxThreadEvent *sendevent = new wxThreadEvent(EVT_MAXIMA);
+             sendevent->SetInt(WRITE_ERROR);
+             QueueEvent(sendevent);
++            continue;
++        }
++        if (written < data.size()) {
++            // The socket took only part of it (its send buffer was full, which
++            // happens with the big setup code on a small TCP stack): the rest,
++            // and everything queued after it, goes first next time, in order,
++            // after we have read what Maxima sent meanwhile.
++            std::vector<std::vector<char>> rest;
++            rest.emplace_back(data.begin() + written, data.end());
++            for (std::size_t j = i + 1; j < toWrite.size(); j++)
++                rest.push_back(std::move(toWrite[j]));
++            std::lock_guard<std::mutex> lock(m_outputQueueMutex);
++            for (auto &later : m_outputQueue)
++                rest.push_back(std::move(later));
++            m_outputQueue.swap(rest);
++            break;
+         }
+     }
+ 
