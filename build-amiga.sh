@@ -56,7 +56,7 @@ if [ ! -x "$WXB/out/sdk/bin/wx-config" ] || [ "$(cat "$WXB/.rev" 2>/dev/null)" !
     if ! STOVE="$STOVE" WORK="$WXB" OUT="$WXB/out" JOBS=$JOBS timeout "$(left)" sh "$WXT/build-amiga.sh" > "$WORK/wx.log" 2>&1; then
         if [ "$(left)" -le 5 ]; then
             echo "toolkit: $(find "$WXB" -name '*.o' | wc -l) objects; last of its log:"
-            tail -4 "$WORK/wx.log" | cut -c1-200
+            grep -v "^-rw\|^drw\|^total" "$WORK/wx.log" | tail -25 | cut -c1-220; date; ls -la --time-style=+%T "$WXB" "$WXB/gui" 2>/dev/null | head -30
             resume "toolkit"
         fi
         tail -40 "$WORK/wx.log"; exit 1
