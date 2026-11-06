@@ -55,7 +55,10 @@ if [ ! -x "$WXB/out/sdk/bin/wx-config" ] || [ "$(cat "$WXB/.rev" 2>/dev/null)" !
     log "toolkit $WXT_COMMIT: building its SDK"
     if ! STOVE="$STOVE" WORK="$WXB" OUT="$WXB/out" JOBS=$JOBS timeout "$(left)" sh "$WXT/build-amiga.sh" > "$WORK/wx.log" 2>&1; then
         if [ "$(left)" -le 5 ]; then
-            echo "toolkit: $(find "$WXB" -name '*.o' | wc -l) objects; last of its log:"
+            echo "toolkit: $(find "$WXB" -name '*.o' | wc -l) objects; GUI objects newer than its setup.h: $(find "$WXB/gui/obj" -name '*.o' -newer "$WXB/gui/wx/setup.h" 2>/dev/null | wc -l) of $(grep -c . "$WXB/gui/sources.txt" 2>/dev/null); load $(cut -d' ' -f1-3 /proc/loadavg), $(nproc) cores"
+            ls -la --time-style=+%T "$WXB/gui/wx/setup.h" 2>/dev/null
+            find "$WXB/gui/obj" -name '*.o' -newer "$WXB/gui/wx/setup.h" -printf '%TT %f\n' 2>/dev/null | sort | sed -n '1p;$p'
+            echo "last of its log:"
             grep -v "^-rw\|^drw\|^total" "$WORK/wx.log" | tail -25 | cut -c1-220; date; ls -la --time-style=+%T "$WXB" "$WXB/gui" 2>/dev/null | head -30
             resume "toolkit"
         fi
