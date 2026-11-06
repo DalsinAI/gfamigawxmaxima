@@ -227,6 +227,7 @@ grep -q "wxmaxima.diag" "$B/link-diag.sh" || { echo "diag: link line not changed
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima.diag" "$B/src/wxmaxima.diag"
 W5=$("$TC/bin/m68k-amigaos-nm" "$B/src/wxmaxima.diag" | awk '$3=="__wrap__Z10wxOnAssertPKciS0_S0_S0_"||$3=="___wrap__Z10wxOnAssertPKciS0_S0_S0_"{print $1}' | head -1)
 ls "$TC/bin/" | grep -E "addr2line|nm$|objdump" | tr '\n' ' '; echo
+{
 echo "diag: wxMaxima.diag $(wc -c < "$OUT/wxMaxima.diag") bytes, wrap5 at 0x$W5"
 grep -v '^#' "$HERE/tools/diag/lookup.txt" | while read -r caller wrap; do
     [ -n "$caller" ] || continue
@@ -244,6 +245,8 @@ for l in sys.stdin:
     last=l.strip()
 print("    nm:", last, "+", hex(t-int(last.split()[0],16)) if last else "")' "$a" || true
 done
+} > "$OUT/diag.txt" 2>&1
+cat "$OUT/diag.txt"
 "$TC/bin/m68k-amigaos-strip" -o "$OUT/wxMaxima" "$B/src/wxmaxima"
 ls -l "$OUT/wxMaxima"
 echo "fpuauto: $("$TC/bin/m68k-amigaos-objdump" -d "$OUT/wxMaxima.debug" | grep -c 'jsr.*<___wrap_' || true) wrapped calls in wxMaxima"
