@@ -267,6 +267,7 @@ cp "$SRC/COPYING" "$P/COPYING"
 du -sh "$P" | sed 's/^/package: /'
 # the package as one tar.gz, and as an LhA archive for the Amiga (our own
 # packer, one core per file; LHA_METHOD=lh0 only stores)
+log "diag branch: no tgz/LhA, lab binaries only"; log "DONE"; exit 0
 tar -C "$WORK/pkg" -czf "$OUT/wxMaxima-$WXMAXIMA_VERSION.tgz" wxMaxima
 ls -l "$OUT/wxMaxima-$WXMAXIMA_VERSION.tgz"
 python3 -I "$HERE/tools/mklha.py" "$P" "$OUT/wxMaxima-$WXMAXIMA_VERSION.lha" "${LHA_METHOD:-auto}"
