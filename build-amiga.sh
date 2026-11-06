@@ -198,11 +198,20 @@ fi
 [ "$(left)" -gt 30 ] || resume "wxMaxima"
 log "wxMaxima: make (budget $(left) s)"
 set +e
+# what is still running just before the time runs out, for the RESUME note
+( sleep $(( $(left) - 15 )) 2>/dev/null && ps -eo etimes=,args= | grep -E 'cc1plus|collect2|/ld |ld\.bfd' | grep -v grep \
+    | sed 's/ -[^ ]*//g' | cut -c1-200 > "$B/running.txt" ) &
+psw=$!
 (cd "$B" && timeout "$(left)" nice -n 19 make -k -j"$JOBS" wxmaxima > make.log 2>&1)
 rc=$?
+kill "$psw" 2>/dev/null || true
 set -e
 if [ ! -f "$B/src/wxmaxima" ] || [ $rc -ne 0 ]; then
-    [ "$(left)" -le 5 ] && resume "wxMaxima, $(find "$B" -name '*.o' | wc -l) objects so far"
+    if [ "$(left)" -le 5 ]; then
+        grep -v '^\s*$' "$B/make.log" | grep -E '^\[|Linking|Building' | tail -6 | cut -c1-200
+        echo "running then:"; cat "$B/running.txt" 2>/dev/null | head -12
+        resume "wxMaxima, $(find "$B" -name '*.o' | wc -l) objects so far"
+    fi
     grep -E 'error|Error|undefined reference' "$B/make.log" | cut -c1-300 | sort | uniq -c | sort -rn | head -50
     tail -15 "$B/make.log" | cut -c1-300
     exit 1
