@@ -1,0 +1,127 @@
+diff --git a/src/Configuration.h b/src/Configuration.h
+index 21ed0e2..ccc3aa3 100644
+--- a/src/Configuration.h
++++ b/src/Configuration.h
+@@ -41,6 +41,7 @@
+ #include <optional>
+ #include <unordered_map>
+ #include <random>
++#include "RandomDevice.h"
+ #include <list>
+ #include <utility>
+ #include <variant>
+@@ -1575,13 +1576,13 @@ private:
+   */
+   long m_configId;
+   //! Our random device
+-  std::random_device m_rd;
++  WxmRandomDevice m_rd;
+   //! Our random engine
+   std::default_random_engine m_eng;
+   wxEnvVariableHashMap m_maximaEnvVars;
+ public:
+-  //! One sample of OS entropy (std::random_device).
+-  std::random_device::result_type RandomEntropy(){return m_rd();}
++  //! One sample of OS entropy (WxmRandomDevice).
++  WxmRandomDevice::result_type RandomEntropy(){return m_rd();}
+   //! The pseudo-random engine, e.g. to feed a distribution.
+   std::default_random_engine &RandomEngine(){return m_eng;}
+   /*! A counter that increases every time we need to recalculate all worksheet cells
+diff --git a/src/RandomDevice.h b/src/RandomDevice.h
+new file mode 100644
+index 0000000..eb07e33
+--- /dev/null
++++ b/src/RandomDevice.h
+@@ -0,0 +1,50 @@
++// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
++/*! \file
++  The random device wxMaxima seeds its generators from.
++
++  AmigaOS has no /dev/urandom, so std::random_device cannot be made there.
++  On the Amiga it is a splitmix64 stream seeded from the clock, this
++  process's addresses and a running count. That's enough for wxMaxima's
++  uses: seeding generators and the secret it gives the Maxima it starts on
++  this machine.
++*/
++#ifndef WXM_RANDOMDEVICE_H
++#define WXM_RANDOMDEVICE_H
++#include <random>
++#if defined(__AMIGA__)
++#include <chrono>
++#include <cstdint>
++class WxmRandomDevice
++{
++public:
++  using result_type = unsigned int;
++  WxmRandomDevice()
++  {
++    m_state ^= static_cast<std::uint64_t>(
++      std::chrono::steady_clock::now().time_since_epoch().count());
++    m_state ^= static_cast<std::uint64_t>(
++      std::chrono::system_clock::now().time_since_epoch().count()) << 17;
++    m_state ^= reinterpret_cast<std::uintptr_t>(this);
++    m_state ^= reinterpret_cast<std::uintptr_t>(&s_count) << 32;
++    m_state += ++s_count * 0x9E3779B97F4A7C15ull;
++  }
++  static constexpr result_type min() { return 0; }
++  static constexpr result_type max() { return 0xFFFFFFFFu; }
++  double entropy() const noexcept { return 0.0; }
++  result_type operator()()
++  {
++    m_state += 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(
++      std::chrono::steady_clock::now().time_since_epoch().count());
++    std::uint64_t z = m_state;
++    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
++    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
++    return static_cast<result_type>((z ^ (z >> 31)) >> 16);
++  }
++private:
++  std::uint64_t m_state = 0x853C49E6748FEA9Bull;
++  static inline std::uint64_t s_count = 0;
++};
++#else
++using WxmRandomDevice = std::random_device;
++#endif
++#endif // WXM_RANDOMDEVICE_H
+diff --git a/src/TroubleshootingRunner.cpp b/src/TroubleshootingRunner.cpp
+index 38d2c0b..82be174 100644
+--- a/src/TroubleshootingRunner.cpp
++++ b/src/TroubleshootingRunner.cpp
+@@ -23,6 +23,7 @@
+   Implements TroubleshootingRunner.
+ */
+ 
++#include "RandomDevice.h"
+ #include "TroubleshootingRunner.h"
+ #include "MaximaAuthLine.h"
+ #include <wx/base64.h>
+@@ -94,7 +95,7 @@ void Drain(wxInputStream *stream, wxString &text) {
+ 
+ //! A strong random secret, as MaximaProcessManager makes one for its Maxima
+ wxString MakeSecret() {
+-  std::random_device entropy;
++  WxmRandomDevice entropy;
+   std::mt19937 prng(entropy());
+   std::uniform_int_distribution<unsigned int> byte(0, 255);
+   wxMemoryBuffer buffer;
+diff --git a/src/ai/AiProvider.cpp b/src/ai/AiProvider.cpp
+index 981a78e..1c21622 100644
+--- a/src/ai/AiProvider.cpp
++++ b/src/ai/AiProvider.cpp
+@@ -19,6 +19,7 @@
+ //
+ //  SPDX-License-Identifier: GPL-2.0+
+ 
++#include "../RandomDevice.h"
+ #include "AiProvider.h"
+ #include <nlohmann/json.hpp>
+ #if wxUSE_WEBREQUEST
+@@ -570,7 +571,7 @@ wxString NewAiCustomProviderId() {
+   // library for something this low-stakes (a collision just means two
+   // custom providers would share one stored API key, not a crash or data
+   // loss, and even that has never been observed across normal use).
+-  std::random_device rd;
++  WxmRandomDevice rd;
+   std::mt19937_64 gen(rd());
+   std::uniform_int_distribution<uint64_t> dist;
+   return wxString::Format(wxS("%016" wxLongLongFmtSpec "x"),

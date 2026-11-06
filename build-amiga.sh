@@ -137,17 +137,26 @@ SPECS="$HERE/scripts/m68k-soft-m68040.specs"
 SRC="$WORK/wxmaxima"; B="$WORK/wxbuild"
 PSUM=$(cat "$HERE"/patches/*.patch | sha256sum | cut -c1-16)
 if [ "$(cat "$SRC/.patched" 2>/dev/null)" != "$WXMAXIMA_COMMIT-$PSUM" ]; then
-    rm -rf "$SRC" "$B"; mkdir -p "$SRC"
-    git -C "$SRC" init -q
-    git -C "$SRC" fetch -q --depth 1 "$WXMAXIMA_GIT" "$WXMAXIMA_COMMIT"
-    git -C "$SRC" checkout -q FETCH_HEAD
-    [ "$(git -C "$SRC" rev-parse HEAD)" = "$WXMAXIMA_COMMIT" ] || { echo "wxMaxima commit mismatch"; exit 1; }
+    # a fresh patched tree, then only the files that changed go into SRC, so
+    # the next make rebuilds what the patches touched, not everything
+    NEW="$WORK/wxmaxima.new"; rm -rf "$NEW"; mkdir -p "$NEW"
+    git -C "$NEW" init -q
+    git -C "$NEW" fetch -q --depth 1 "$WXMAXIMA_GIT" "$WXMAXIMA_COMMIT"
+    git -C "$NEW" checkout -q FETCH_HEAD
+    [ "$(git -C "$NEW" rev-parse HEAD)" = "$WXMAXIMA_COMMIT" ] || { echo "wxMaxima commit mismatch"; exit 1; }
     for p in "$HERE"/patches/*.patch; do
-        patch -s -d "$SRC" -p1 < "$p" || { echo "patch failed: $p"; exit 1; }
+        patch -s -d "$NEW" -p1 < "$p" || { echo "patch failed: $p"; exit 1; }
     done
+    rm -rf "$NEW/.git"
+    if [ -d "$SRC" ]; then
+        python3 -I "$HERE/scripts/sync-tree.py" "$NEW" "$SRC"
+        rm -rf "$NEW"
+    else
+        mv "$NEW" "$SRC"
+    fi
     echo "$WXMAXIMA_COMMIT-$PSUM" > "$SRC/.patched"
 fi
-CSUM=$( (cat "$0" "$HERE/cmake/toolchain-m68k-amigaos.cmake" "$HERE"/cmake/Platform/*.cmake; echo "$WXT_COMMIT") | sha256sum | cut -c1-16)
+CSUM=$( (echo "cmake options 1"; cat "$HERE/cmake/toolchain-m68k-amigaos.cmake" "$HERE"/cmake/Platform/*.cmake; echo "$WXT_COMMIT") | sha256sum | cut -c1-16)
 if [ "$(cat "$B/.configured" 2>/dev/null)" != "$CSUM" ]; then
     rm -rf "$B"; mkdir -p "$B"
     (cd "$B" && cmake "$SRC" -G "Unix Makefiles" \
