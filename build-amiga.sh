@@ -95,17 +95,28 @@ if [ ! -f "$TB" ] || ! echo "$MAXIMA_SHA256  $TB" | sha256sum -c - >/dev/null 2>
     mv "$TB.part" "$TB"
 fi
 MX="$WORK/maxima-$MAXIMA_VERSION"; MXS="$WORK/maxima-stage"
-MSUM=$( (echo "$HOSTCLISP"; cat "$CLC"/host-*/.done "$HERE/scripts/make-loadlist.py") | sha256sum | cut -c1-16)
+# the compile depends on the host CLISP only; it goes on where it stopped
+# (Maxima's defsystem skips files already compiled), and the Amiga's load
+# list is made again on its own when its script changes
+MSUM=$( (echo "$HOSTCLISP"; cat "$CLC"/host-*/.done) | sha256sum | cut -c1-16)
 if [ "$(cat "$MXS/.built" 2>/dev/null)" != "$MSUM" ]; then
-    [ "$(left)" -gt 200 ] || resume "Maxima"
-    log "Maxima $MAXIMA_VERSION: compiling with $HOSTCLISP"
-    rm -rf "$MX" "$MXS"; mkdir -p "$MX"
-    tar xzf "$TB" -C "$MX" --strip-components=1
-    ( cd "$MX" && FORCE_UNSAFE_CONFIGURE=1 ./configure --enable-clisp --with-clisp="$HOSTCLISP" \
-        --disable-build-docs --prefix="$MXS" > "$WORK/maxima-configure.log" 2>&1 ) \
-        || { tail -30 "$WORK/maxima-configure.log"; exit 1; }
-    ( cd "$MX/src" && nice -n 19 make clisp > "$WORK/maxima-make.log" 2>&1 ) \
-        || { grep -n -B3 -A8 '\*\*\* -' "$WORK/maxima-make.log" | head -40; tail -20 "$WORK/maxima-make.log"; exit 1; }
+    [ "$(left)" -gt 120 ] || resume "Maxima"
+    # (a tree configured for this CLISP before the marker existed counts)
+    [ -f "$MX/.configured" ] || ! grep -qF -- "$HOSTCLISP" "$MX/config.status" 2>/dev/null || echo "$MSUM" > "$MX/.configured"
+    if [ "$(cat "$MX/.configured" 2>/dev/null)" != "$MSUM" ]; then
+        log "Maxima $MAXIMA_VERSION: configuring for $HOSTCLISP"
+        rm -rf "$MX" "$MXS"; mkdir -p "$MX"
+        tar xzf "$TB" -C "$MX" --strip-components=1
+        ( cd "$MX" && FORCE_UNSAFE_CONFIGURE=1 ./configure --enable-clisp --with-clisp="$HOSTCLISP" \
+            --disable-build-docs --prefix="$MXS" > "$WORK/maxima-configure.log" 2>&1 ) \
+            || { tail -30 "$WORK/maxima-configure.log"; exit 1; }
+        echo "$MSUM" > "$MX/.configured"
+    fi
+    log "Maxima: compiling ($(find "$MX/src/binary-clisp" -name '*.fas' 2>/dev/null | wc -l) files so far, budget $(left) s)"
+    if ! ( cd "$MX/src" && timeout "$(( $(left) - 60 ))" nice -n 19 make clisp > "$WORK/maxima-make.log" 2>&1 ); then
+        [ "$(left)" -le 65 ] && resume "Maxima, $(find "$MX/src/binary-clisp" -name '*.fas' | wc -l) files so far"
+        grep -n -B3 -A8 '\*\*\* -' "$WORK/maxima-make.log" | head -40; tail -20 "$WORK/maxima-make.log"; exit 1
+    fi
     ( cd "$MX" && nice -n 19 make install > "$WORK/maxima-install.log" 2>&1 ) \
         || { tail -30 "$WORK/maxima-install.log"; exit 1; }
     # Maxima's own load order (its defsystem, verbose), for the Amiga's image
@@ -117,9 +128,14 @@ if [ "$(cat "$MXS/.built" 2>/dev/null)" != "$MSUM" ]; then
 EOF
     ( cd "$MX/src" && "$HOSTCLISP" -norc -q "$WORK/maxima-order.lisp" > "$WORK/maxima-order.log" 2>&1 ) \
         || { tail -20 "$WORK/maxima-order.log"; exit 1; }
-    python3 -I "$HERE/scripts/make-loadlist.py" "$WORK/maxima-order.log" "$MAXIMA_VERSION" "$WORK/loadmaxima.lisp"
+    rm -f "$WORK/loadmaxima.sum"
     echo "$MSUM" > "$MXS/.built"
     log "Maxima compiled: $(find "$MX/src/binary-clisp" -name '*.fas' | wc -l) files"
+fi
+LSUM=$( (echo "$MSUM"; cat "$HERE/scripts/make-loadlist.py") | sha256sum | cut -c1-16)
+if [ "$(cat "$WORK/loadmaxima.sum" 2>/dev/null)" != "$LSUM" ]; then
+    python3 -I "$HERE/scripts/make-loadlist.py" "$WORK/maxima-order.log" "$MAXIMA_VERSION" "$WORK/loadmaxima.lisp"
+    echo "$LSUM" > "$WORK/loadmaxima.sum"
 fi
 
 # ---- 4 fpuauto: libfpuauto.a from its fpuauto.S, as its build-amiga.sh makes it
