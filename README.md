@@ -41,9 +41,31 @@ wxMaxima/
 
 wxMaxima finds `Maxima/maxima` beside itself, starts it with `-s <port>` and talks to it over a local socket, as on every other system.
 
+## ARexx
+
+Each wxMaxima window has an ARexx port, `WXMAXIMA.1` (`WXMAXIMA.2` for a second window), from the GFOpenWX Toolkit's `wxARexxPort` on arexx.class.
+
+| Command | Does |
+| --- | --- |
+| `OPEN FILE/A` | open a worksheet (`.wxmx`, `.wxm`) or a `.mac` file |
+| `SAVE` | save the worksheet (asks for a name if it has none; RC 5 when not saved) |
+| `EVAL EXPR/A,WAIT/S` | a new cell with EXPR, evaluated; WAIT answers once Maxima has finished |
+| `EVALALL` | evaluate every cell |
+| `INTERRUPT` | stop the evaluation |
+| `BUSY` | RESULT: 1 while Maxima is working, else 0 |
+| `QUIT`, `ACTIVATE`, `DEACTIVATE`, `VERSION`, `HELP`, `FAULT` | the toolkit's standard commands |
+
+```
+/* wxMaxima: integrate, wait, save */
+OPTIONS RESULTS
+ADDRESS 'WXMAXIMA.1'
+'EVAL "integrate(x^2, x);" WAIT'
+'SAVE'
+```
+
 ## Changes to wxMaxima
 
-`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), and a longer wait for Maxima to connect.
+`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, and the ARexx port (`src/AmigaRexx.cpp`).
 
 ## Licence
 

@@ -1,0 +1,129 @@
+AmigaOS: each window's ARexx port WXMAXIMA.1 (OPEN, SAVE, EVAL, EVALALL, INTERRUPT, BUSY)
+
+diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
+--- a/src/AmigaRexx.cpp	1970-01-01 00:00:00.000000000 +0000
++++ b/src/AmigaRexx.cpp	2026-11-07 13:42:59.052656384 +0000
+@@ -0,0 +1,82 @@
++// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
++/* AmigaOS: each wxMaxima window's ARexx port, WXMAXIMA.1 (WXMAXIMA.2 for a
++   second window), on the GFOpenWX Toolkit's wxARexxPort and arexx.class.
++
++     OPEN FILE/A         open a worksheet (.wxmx, .wxm) or a .mac file
++     SAVE                save the worksheet (asks for a name if it has none)
++     EVAL EXPR/A,WAIT/S  a new cell with EXPR, evaluated; WAIT: answers once
++                         Maxima has finished (RC 10 after ten minutes)
++     EVALALL             evaluate every cell
++     INTERRUPT           stop the evaluation
++     BUSY                RESULT: 1 while Maxima is working, else 0
++   and the toolkit's QUIT, ACTIVATE, DEACTIVATE, VERSION, HELP, FAULT.
++
++   Copyright (c) 2026 AmigaChrome Team. GPL v2 or later, as wxMaxima. */
++#ifdef __AMIGA__
++#include "wxMaxima.h"
++#include "EventIDs.h"
++#include "Version.h"
++#include "worksheet/Worksheet.h"
++#include <wx/filename.h>
++#include <wx/openlayout/arexx.h>
++
++class AmigaRexx
++{
++public:
++  static void Start(wxMaxima *frame);
++private:
++  static bool Busy(wxMaxima *f)
++  {
++    return f->m_maximaBusy ||
++      (f->GetWorksheet() && !f->GetWorksheet()->GetEvaluationQueue().Empty());
++  }
++  static void Menu(wxMaxima *f, int id)
++  {
++    wxCommandEvent ev(wxEVT_MENU, id);
++    ev.SetEventObject(f);
++    f->GetEventHandler()->ProcessEvent(ev);
++  }
++};
++
++void AmigaRexx::Start(wxMaxima *f)
++{
++  wxARexxPort *rexx = new wxARexxPort("WXMAXIMA", "wxMaxima " WXMAXIMA_VERSION);
++  rexx->Add("OPEN", "FILE/A", [f](wxARexxCommand &c) {
++    wxString file = c.Str(0);
++    if (!wxFileExists(file))
++      c.SetError(10, 205);      // object not found
++    else if (!f->m_fileIO.OpenFile(file))
++      c.SetError(10);
++  });
++  rexx->Add("SAVE", "", [f](wxARexxCommand &c) {
++    if (!f->m_fileIO.SaveFile())
++      c.SetError(5);            // not saved (or the name was not given)
++  });
++  rexx->Add("EVAL", "EXPR/A,WAIT/S", [f, rexx](wxARexxCommand &c) {
++    if (!f->GetWorksheet()) {
++      c.SetError(20);
++      return;
++    }
++    f->MenuCommand(c.Str(0));
++    if (c.Switch(1))
++      rexx->WaitFor(c, [f]() { return !Busy(f); }, 600000);
++  });
++  rexx->Add("EVALALL", "", [f](wxARexxCommand &) {
++    Menu(f, EventIDs::menu_evaluate_all);
++  });
++  rexx->Add("INTERRUPT", "", [f](wxARexxCommand &) {
++    Menu(f, EventIDs::menu_interrupt_id);
++  });
++  rexx->Add("BUSY", "", [f](wxARexxCommand &c) {
++    c.SetResult(Busy(f) ? "1" : "0");
++  });
++  rexx->Open();
++  f->Bind(wxEVT_DESTROY, [f, rexx](wxWindowDestroyEvent &ev) {
++    if (ev.GetEventObject() == f)
++      delete rexx;
++    ev.Skip();
++  });
++}
++
++void AmigaRexxStart(wxMaxima *frame) { AmigaRexx::Start(frame); }
++#endif
+diff -ruN wxm-a/src/CMakeLists.txt wxm-b/src/CMakeLists.txt
+--- a/src/CMakeLists.txt	2026-10-28 19:23:42.000000000 +0000
++++ b/src/CMakeLists.txt	2026-11-07 13:42:59.056324218 +0000
+@@ -163,6 +163,7 @@
+     MathParser.cpp
+     Maxima.cpp
+     MaximaIPC.cpp
++    AmigaRexx.cpp
+     MaximaCommandMenus.cpp
+     MaximaResponseReader.cpp
+     MaximaProcessManager.cpp
+diff -ruN wxm-a/src/main.cpp wxm-b/src/main.cpp
+--- a/src/main.cpp	2026-10-28 19:23:42.000000000 +0000
++++ b/src/main.cpp	2026-11-07 13:42:59.071499520 +0000
+@@ -1022,6 +1022,12 @@
+     initialContents += block;
+   }
+   wxMaxima *frame = new wxMaxima(nullptr, wxID_ANY, title, file, initialContents);
++#ifdef __AMIGA__
++  {
++    extern void AmigaRexxStart(wxMaxima *frame);
++    AmigaRexxStart(frame);
++  }
++#endif
+   frame->EvalOnStartup(evalOnStartup);
+   frame->ExitAfterEval(exitAfterEval);
+   frame->Show(true);
+diff -ruN wxm-a/src/wxMaxima.h wxm-b/src/wxMaxima.h
+--- a/src/wxMaxima.h	2026-10-28 19:23:42.000000000 +0000
++++ b/src/wxMaxima.h	2026-11-07 13:42:59.054324242 +0000
+@@ -734,6 +734,10 @@
+ 
+ #endif
+   friend class MaximaIPC;
++#ifdef __AMIGA__
++  //! the ARexx port (AmigaRexx.cpp) reaches the file loaders and the busy flag
++  friend class AmigaRexx;
++#endif
+   //! The extracted menu-command handlers reach wxMaxima's services (MenuCommand,
+   //! the wizards, m_configuration) through this friendship.
+   friend class MaximaCommandMenus;
