@@ -63,6 +63,8 @@ ADDRESS 'WXMAXIMA.1'
 'SAVE'
 ```
 
+`Rexx/Eval.rexx` (in the package's Rexx drawer) is an example.
+
 ## Changes to wxMaxima
 
 `patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, and the ARexx port (`src/AmigaRexx.cpp`).
