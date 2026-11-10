@@ -3,7 +3,7 @@ AmigaOS: each window's ARexx port WXMAXIMA.1 (OPEN, SAVE, EVAL, EVALALL, INTERRU
 diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 --- a/src/AmigaRexx.cpp	1970-01-01 00:00:00.000000000 +0000
 +++ b/src/AmigaRexx.cpp	2026-11-07 13:42:59.052656384 +0000
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,176 @@
 +// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
 +/* AmigaOS: each wxMaxima window's ARexx port, WXMAXIMA.1 (WXMAXIMA.2 for a
 +   second window), on the GFOpenWX Toolkit's wxARexxPort and arexx.class.
@@ -113,8 +113,6 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +    // the port's wait runs messages and pending events but no idle time:
 +    // give it some each round, or Busy() never ends
 +    if (!rexx->WaitFor(c, [f]() {
-+          if (wxTheApp)
-+            wxTheApp->ProcessIdle();
 +          return !Busy(f);
 +        }, 600000))
 +      return;

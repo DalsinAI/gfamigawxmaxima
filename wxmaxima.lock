@@ -14,7 +14,7 @@ CLISP_COMMIT=66506f22410287ccb853c13a5c7f3881451dd824
 # GFOpenWX Toolkit (wxWidgets on GFOpenLayout): v0.1.0-rc4, with wxARexxPort and
 # the log window, notifications, splines and SVG wxMaxima needs
 WXT_REPO=https://github.com/DalsinAI/gfopenwxtoolkit
-WXT_COMMIT=1c4e5dd981a8d3fb7ccb417bd91dd201bd18307d
+WXT_COMMIT=28ceed9ab578a6b1e5ee5042807fb299326c60a2
 # fpuauto (amicradle-guest common/fpuauto): the FPU when there is one
 FPUAUTO_REPO=https://github.com/DalsinAI/amicradle-guest
 FPUAUTO_COMMIT=4a784c84b878fe0e9abade7006e67e1ded9b165c
