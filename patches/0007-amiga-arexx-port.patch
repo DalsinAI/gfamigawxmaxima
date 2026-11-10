@@ -3,13 +3,13 @@ AmigaOS: each window's ARexx port WXMAXIMA.1 (OPEN, SAVE, EVAL, EVALALL, INTERRU
 diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 --- a/src/AmigaRexx.cpp	1970-01-01 00:00:00.000000000 +0000
 +++ b/src/AmigaRexx.cpp	2026-11-07 13:42:59.052656384 +0000
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,178 @@
 +// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
 +/* AmigaOS: each wxMaxima window's ARexx port, WXMAXIMA.1 (WXMAXIMA.2 for a
 +   second window), on the GFOpenWX Toolkit's wxARexxPort and arexx.class.
 +
 +     OPEN FILE/A         open a worksheet (.wxmx, .wxm) or a .mac file
-+     SAVE                save the worksheet (asks for a name if it has none)
++     SAVE FILE/K         save the worksheet (as FILE; RC 10 if it has no name)
 +     EVAL EXPR/A,WAIT/S  a new cell with EXPR (";" added when it has no
 +                         ";" or "$"), evaluated; WAIT: answers once Maxima
 +                         has finished, RESULT the cell's output as text
@@ -33,6 +33,7 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +#include "Version.h"
 +#include "worksheet/Worksheet.h"
 +#include "cells/GroupCell.h"
++#include <wx/app.h>
 +#include <wx/config.h>
 +#include <wx/filename.h>
 +#include <wx/openlayout/arexx.h>
@@ -65,9 +66,22 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +    else if (!f->m_fileIO.OpenFile(file))
 +      c.SetError(10);
 +  });
-+  rexx->Add("SAVE", "", [f](wxARexxCommand &c) {
++  rexx->Add("SAVE", "FILE/K", [f](wxARexxCommand &c) {
++    // never the Save As requester for a script: FILE names the file, an
++    // untitled worksheet without it answers RC 10 (210, required argument)
++    Worksheet *w = f->GetWorksheet();
++    if (!w) {
++      c.SetError(20);
++      return;
++    }
++    if (c.Has(0))
++      w->SetCurrentFile(c.Str(0));
++    else if (w->GetCurrentFile().IsEmpty()) {
++      c.SetError(10, 210);
++      return;
++    }
 +    if (!f->m_fileIO.SaveFile())
-+      c.SetError(5);            // not saved (or the name was not given)
++      c.SetError(10);
 +  });
 +  rexx->Add("EVAL", "EXPR/A,WAIT/S", [f, rexx](wxARexxCommand &c) {
 +    Worksheet *w = f->GetWorksheet();
@@ -95,7 +109,14 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +    w->RequestRedraw();
 +    if (!c.Switch(1))
 +      return;
-+    if (!rexx->WaitFor(c, [f]() { return !Busy(f); }, 600000))
++    // wxMaxima reads Maxima's answer and redraws in its idle handlers, and
++    // the port's wait runs messages and pending events but no idle time:
++    // give it some each round, or Busy() never ends
++    if (!rexx->WaitFor(c, [f]() {
++          if (wxTheApp)
++            wxTheApp->ProcessIdle();
++          return !Busy(f);
++        }, 600000))
 +      return;
 +    // RESULT: the cell's output as text, if the cell is still there
 +    if (!f->GetWorksheet())

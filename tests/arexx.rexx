@@ -40,8 +40,13 @@ CALL check 'unknown', rc >= 10
 CALL check 'DEACTIVATE', rc = 0
 'ACTIVATE'
 CALL check 'ACTIVATE', rc = 0
+'SAVE'
+CALL check 'SAVE untitled, no FILE: RC 10, no requester', rc = 10
 'QUIT'
 CALL check 'QUIT unsaved untitled: RC 5, stays', rc = 5 & SHOW('P', 'WXMAXIMA.1')
+ADDRESS COMMAND 'Delete >NIL: RAM:wxm-arexx-test.wxmx'
+'SAVE FILE RAM:wxm-arexx-test.wxmx'
+CALL check 'SAVE FILE', rc = 0 & EXISTS('RAM:wxm-arexx-test.wxmx')
 'QUIT FORCE'
 CALL check 'QUIT FORCE', rc = 0
 DO i = 1 TO 60

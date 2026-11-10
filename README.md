@@ -49,7 +49,7 @@ Each wxMaxima window has an ARexx port, `WXMAXIMA.1` (`WXMAXIMA.2` for a second 
 | Command | Does |
 | --- | --- |
 | `OPEN FILE/A` | open a worksheet (`.wxmx`, `.wxm`) or a `.mac` file |
-| `SAVE` | save the worksheet (asks for a name if it has none; RC 5 when not saved) |
+| `SAVE FILE/K` | save the worksheet, as FILE if given; an untitled worksheet without FILE answers RC 10 (no Save As requester) |
 | `EVAL EXPR/A,WAIT/S` | a new cell with EXPR (`;` added if it has none), evaluated; WAIT answers once Maxima has finished, with the cell's output in RESULT |
 | `EVALALL` | evaluate every cell |
 | `INTERRUPT` | stop the evaluation |
@@ -64,10 +64,10 @@ OPTIONS RESULTS
 ADDRESS 'WXMAXIMA.1'
 'EVAL "integrate(x^2, x);" WAIT'
 SAY result
-'SAVE'
+'SAVE FILE RAM:integrate.wxmx'
 ```
 
-Return codes: 0 OK, 5 warning (not saved), 10 error, 20 unknown command or no worksheet.
+Return codes: 0 OK, 5 warning (QUIT with unsaved, untitled work), 10 error, 20 unknown command or no worksheet.
 
 `Rexx/Eval.rexx` (in the package's Rexx drawer) is an example; `tests/arexx.rexx` checks the whole port (`rx tests/arexx.rexx` with wxMaxima running).
 
