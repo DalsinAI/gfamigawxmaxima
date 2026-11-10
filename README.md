@@ -37,6 +37,7 @@ wxMaxima/
     loadmaxima.lisp     Maxima's load order
     makeimage.lisp      the first start's script
     maxima.mem          made on the Amiga at first start (a memory image belongs to the machine it is made on)
+                        (made again when an update brings a newer loadmaxima.lisp; the old one stays as maxima.mem.old)
 ```
 
 wxMaxima finds `Maxima/maxima` beside itself, starts it with `-s <port>` and talks to it over a local socket, as on every other system.

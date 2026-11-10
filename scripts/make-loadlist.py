@@ -26,6 +26,16 @@ with open(out, "w") as f:
     f.write(";;; Maxima %s for AmigaCLISP: load Maxima, save MAXIMA_PREFIX/maxima.mem.\n" % version)
     f.write(";;; Made by make-loadlist.py from Maxima's own load order (%d files).\n" % len(items))
     f.write("(in-package :cl-user)\n")
+    # maxima.system defines and exports cl-user:*maxima-build-time* before
+    # it loads anything (build_info() and wxMathML.lisp's wxbuild_info()
+    # read it); the load list leaves maxima.system out, so it goes here.
+    # Without it, wxMathML.lisp stops at read time, before it prints the
+    # key wxMaxima waits for, and no cell is ever evaluated.
+    import os, time
+    t = time.gmtime(int(os.environ.get("SOURCE_DATE_EPOCH", os.path.getmtime(log))))
+    f.write("(defvar *maxima-build-time* '(%d %d %d %d %d %d %d nil 0))\n"
+            % (t.tm_sec, t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon, t.tm_year, t.tm_wday))
+    f.write("(export '*maxima-build-time*)\n")
     f.write("(setf *read-default-float-format* 'double-float)\n")
     f.write("(defvar *amiga-maxima-prefix* (ext:getenv \"MAXIMA_PREFIX\"))\n")
     f.write("(defun amiga-maxima-file (kind name)\n"
