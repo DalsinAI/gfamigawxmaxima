@@ -1,0 +1,30 @@
+Diag (lab only): EVAL WAIT's state every 20 rounds in T:wxm-rexx.log
+
+--- a/src/AmigaRexx.cpp	2026-11-10 10:56:10.768899931 +0000
++++ b/src/AmigaRexx.cpp	2026-11-10 10:56:10.769341154 +0000
+@@ -28,6 +28,7 @@
+ #include "worksheet/Worksheet.h"
+ #include "cells/GroupCell.h"
+ #include <wx/app.h>
++#include <cstdio>
+ #include <wx/config.h>
+ #include <wx/filename.h>
+ #include <wx/openlayout/arexx.h>
+@@ -109,6 +110,17 @@
+     if (!rexx->WaitFor(c, [f]() {
+           if (wxTheApp)
+             wxTheApp->ProcessIdle();
++          static unsigned n = 0;
++          if ((n++ % 20) == 0) {
++            FILE *df = fopen("T:wxm-rexx.log", "a");
++            if (df) {
++              fprintf(df, "%lu wait %u: busy %d maximaBusy %d queue %d auth %d first %d\n",
++                      (unsigned long)wxGetLocalTime(), n, (int)Busy(f), (int)f->m_maximaBusy,
++                      f->GetWorksheet() ? (int)!f->GetWorksheet()->GetEvaluationQueue().Empty() : -1,
++                      (int)f->m_maximaAuthenticated, (int)f->m_first);
++              fclose(df);
++            }
++          }
+           return !Busy(f);
+         }, 600000))
+       return;
