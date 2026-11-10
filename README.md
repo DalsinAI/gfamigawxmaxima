@@ -73,7 +73,7 @@ Return codes: 0 OK, 5 warning (QUIT with unsaved, untitled work), 10 error, 20 u
 
 ## Changes to wxMaxima
 
-`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, and the ARexx port (`src/AmigaRexx.cpp`).
+`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, the ARexx port (`src/AmigaRexx.cpp`), and an autocompletion list that names each symbol once (the Amiga CLISP visits each symbol some 500 times in DO-SYMBOLS, which made the list 2.4 MB and held up the first answer for minutes).
 
 ## Licence
 
