@@ -75,6 +75,8 @@ Return codes: 0 OK, 5 warning (QUIT with unsaved, untitled work), 10 error, 20 u
 
 `patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, the ARexx port (`src/AmigaRexx.cpp`), and an autocompletion list that names each symbol once (the Amiga CLISP visits each symbol some 500 times in DO-SYMBOLS, which made the list 2.4 MB and held up the first answer for minutes).
 
+`scripts/make-loadlist.py` (Maxima's image): defines `*maxima-build-time*`, which Maxima's own build sets in a file the load list leaves out, and gives Maxima's directory parser AmigaDOS names in the unix form the other paths use (`SYS:Prefs/Env-Archive` becomes `/SYS/Prefs/Env-Archive/`), so the user directory is not looked for on a volume called `/SYS`.
+
 ## Licence
 
 wxMaxima and Maxima are GPL v2 or later (Maxima: GPL v2); this port's patches, launcher and scripts are under GPL v2 or later.
