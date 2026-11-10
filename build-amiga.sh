@@ -232,7 +232,8 @@ cp -R "$MXS/share/maxima/$MAXIMA_VERSION" "$M/share/maxima/"
 cp "$MX"/doc/info/maxima-index.lisp "$MX"/doc/info/maxima-index-html.lisp "$MX"/doc/info/maxima.info* "$M/info/" 2>/dev/null || :
 cp "$WORK/loadmaxima.lisp" "$HERE/launcher/makeimage.lisp" "$M/"
 cp "$HERE/README.md" "$P/ReadMe" 2>/dev/null || :
-mkdir -p "$P/Rexx"; cp "$HERE"/Rexx/*.rexx "$P/Rexx/"   # the ARexx example (README: ARexx)
+mkdir -p "$P/Rexx" "$P/tests"; cp "$HERE"/Rexx/*.rexx "$P/Rexx/"   # the ARexx example (README: ARexx)
+cp "$HERE/tests/arexx.rexx" "$P/tests/"   # the ARexx port test
 cp "$SRC/COPYING" "$P/COPYING"
 ( cd "$WORK/pkg" && find . -type f | sort | xargs sha256sum ) > "$OUT/SHA256SUMS"
 du -sh "$P" | sed 's/^/package: /'

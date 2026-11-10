@@ -1,4 +1,4 @@
-/* Eval.rexx: wxMaxima works out an expression and waits for it.
+/* Eval.rexx: wxMaxima works out an expression and prints the answer.
    rx Eval.rexx "integrate(x^2, x)"   (wxMaxima running) */
 OPTIONS RESULTS
 PARSE ARG expr
@@ -9,5 +9,5 @@ IF ~SHOW('P', 'WXMAXIMA.1') THEN DO
 END
 ADDRESS 'WXMAXIMA.1'
 'EVAL' '"'expr'"' 'WAIT'
-IF rc = 0 THEN SAY 'Done:' expr
+IF rc = 0 THEN SAY expr '=' result
 ELSE SAY 'Maxima could not do it (rc' rc')'

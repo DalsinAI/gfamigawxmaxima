@@ -3,15 +3,17 @@ AmigaOS: each window's ARexx port WXMAXIMA.1 (OPEN, SAVE, EVAL, EVALALL, INTERRU
 diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 --- a/src/AmigaRexx.cpp	1970-01-01 00:00:00.000000000 +0000
 +++ b/src/AmigaRexx.cpp	2026-11-07 13:42:59.052656384 +0000
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,157 @@
 +// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
 +/* AmigaOS: each wxMaxima window's ARexx port, WXMAXIMA.1 (WXMAXIMA.2 for a
 +   second window), on the GFOpenWX Toolkit's wxARexxPort and arexx.class.
 +
 +     OPEN FILE/A         open a worksheet (.wxmx, .wxm) or a .mac file
 +     SAVE                save the worksheet (asks for a name if it has none)
-+     EVAL EXPR/A,WAIT/S  a new cell with EXPR, evaluated; WAIT: answers once
-+                         Maxima has finished (RC 10 after ten minutes)
++     EVAL EXPR/A,WAIT/S  a new cell with EXPR (";" added when it has no
++                         ";" or "$"), evaluated; WAIT: answers once Maxima
++                         has finished, RESULT the cell's output as text
++                         (RC 10 after ten minutes)
 +     EVALALL             evaluate every cell
 +     INTERRUPT           stop the evaluation
 +     BUSY                RESULT: 1 while Maxima is working, else 0
@@ -30,6 +32,7 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +#include "EventIDs.h"
 +#include "Version.h"
 +#include "worksheet/Worksheet.h"
++#include "cells/GroupCell.h"
 +#include <wx/config.h>
 +#include <wx/filename.h>
 +#include <wx/openlayout/arexx.h>
@@ -67,13 +70,44 @@ diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
 +      c.SetError(5);            // not saved (or the name was not given)
 +  });
 +  rexx->Add("EVAL", "EXPR/A,WAIT/S", [f, rexx](wxARexxCommand &c) {
-+    if (!f->GetWorksheet()) {
++    Worksheet *w = f->GetWorksheet();
++    if (!w) {
 +      c.SetError(20);
 +      return;
 +    }
-+    f->MenuCommand(c.Str(0));
-+    if (c.Switch(1))
-+      rexx->WaitFor(c, [f]() { return !Busy(f); }, 600000);
++    wxString expr = c.Str(0);
++    expr.Trim(true).Trim(false);
++    if (expr.empty()) {
++      c.SetError(10);
++      return;
++    }
++    if (!expr.EndsWith(wxS(";")) && !expr.EndsWith(wxS("$")))
++      expr += wxS(";");
++    // as MenuCommand(), keeping the new cell to read its answer from
++    w->OpenHCaret(expr);
++    GroupCell *g = w->GetActiveCell() ? w->GetActiveCell()->GetGroup() : nullptr;
++    if (!g) {
++      c.SetError(10);
++      return;
++    }
++    w->AddCellToEvaluationQueue(g);
++    f->m_evaluator.TriggerEvaluation();
++    w->RequestRedraw();
++    if (!c.Switch(1))
++      return;
++    if (!rexx->WaitFor(c, [f]() { return !Busy(f); }, 600000))
++      return;
++    // RESULT: the cell's output as text, if the cell is still there
++    if (!f->GetWorksheet())
++      return;
++    for (GroupCell *t = f->GetWorksheet()->GetTree(); t; t = t->GetNext())
++      if (t == g) {
++        if (Cell *out = g->GetOutput()) {
++          wxString text = out->ListToString();
++          c.SetResult(text.Trim(true).Trim(false));
++        }
++        return;
++      }
 +  });
 +  rexx->Add("EVALALL", "", [f](wxARexxCommand &) {
 +    Menu(f, EventIDs::menu_evaluate_all);

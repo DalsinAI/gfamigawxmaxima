@@ -49,21 +49,26 @@ Each wxMaxima window has an ARexx port, `WXMAXIMA.1` (`WXMAXIMA.2` for a second 
 | --- | --- |
 | `OPEN FILE/A` | open a worksheet (`.wxmx`, `.wxm`) or a `.mac` file |
 | `SAVE` | save the worksheet (asks for a name if it has none; RC 5 when not saved) |
-| `EVAL EXPR/A,WAIT/S` | a new cell with EXPR, evaluated; WAIT answers once Maxima has finished |
+| `EVAL EXPR/A,WAIT/S` | a new cell with EXPR (`;` added if it has none), evaluated; WAIT answers once Maxima has finished, with the cell's output in RESULT |
 | `EVALALL` | evaluate every cell |
 | `INTERRUPT` | stop the evaluation |
 | `BUSY` | RESULT: 1 while Maxima is working, else 0 |
-| `QUIT`, `ACTIVATE`, `DEACTIVATE`, `VERSION`, `HELP`, `FAULT` | the toolkit's standard commands |
+| `QUIT FORCE/S` | close the window and Maxima with it; a named worksheet is saved first, an untitled unsaved one answers RC 5 (no requester); FORCE does not save. Nothing is left behind: no window, no Maxima, no port |
+| `ACTIVATE`, `DEACTIVATE` | the window to the front, or iconified |
+| `VERSION`, `HELP`, `FAULT` | the toolkit's standard commands |
 
 ```
 /* wxMaxima: integrate, wait, save */
 OPTIONS RESULTS
 ADDRESS 'WXMAXIMA.1'
 'EVAL "integrate(x^2, x);" WAIT'
+SAY result
 'SAVE'
 ```
 
-`Rexx/Eval.rexx` (in the package's Rexx drawer) is an example.
+Return codes: 0 OK, 5 warning (not saved), 10 error, 20 unknown command or no worksheet.
+
+`Rexx/Eval.rexx` (in the package's Rexx drawer) is an example; `tests/arexx.rexx` checks the whole port (`rx tests/arexx.rexx` with wxMaxima running).
 
 ## Changes to wxMaxima
 
