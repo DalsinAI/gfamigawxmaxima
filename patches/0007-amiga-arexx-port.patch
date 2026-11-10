@@ -1,0 +1,225 @@
+AmigaOS: each window's ARexx port WXMAXIMA.1 (OPEN, SAVE, EVAL, EVALALL, INTERRUPT, BUSY)
+
+diff -ruN wxm-a/src/AmigaRexx.cpp wxm-b/src/AmigaRexx.cpp
+--- a/src/AmigaRexx.cpp	1970-01-01 00:00:00.000000000 +0000
++++ b/src/AmigaRexx.cpp	2026-11-07 13:42:59.052656384 +0000
+@@ -0,0 +1,178 @@
++// -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
++/* AmigaOS: each wxMaxima window's ARexx port, WXMAXIMA.1 (WXMAXIMA.2 for a
++   second window), on the GFOpenWX Toolkit's wxARexxPort and arexx.class.
++
++     OPEN FILE/A         open a worksheet (.wxmx, .wxm) or a .mac file
++     SAVE FILE/K         save the worksheet (as FILE; RC 10 if it has no name)
++     EVAL EXPR/A,WAIT/S  a new cell with EXPR (";" added when it has no
++                         ";" or "$"), evaluated; WAIT: answers once Maxima
++                         has finished, RESULT the cell's output as text
++                         (RC 10 after ten minutes)
++     EVALALL             evaluate every cell
++     INTERRUPT           stop the evaluation
++     BUSY                RESULT: 1 while Maxima is working, else 0
++     QUIT FORCE/S        close this window, Maxima with it: saves a named
++                         worksheet first; RC 5 (and nothing closes) when the
++                         worksheet is untitled and unsaved. FORCE: no saving
++     ACTIVATE DEACTIVATE this window to the front, or iconified
++   and the toolkit's VERSION, HELP, FAULT.
++   QUIT, ACTIVATE and DEACTIVATE are ours, not the toolkit's: the toolkit's
++   act on the app's top window, and wxMaxima's is its hidden log window, so
++   QUIT closed that and left the worksheet, Maxima and this port behind.
++
++   Copyright (c) 2026 AmigaChrome Team. GPL v2 or later, as wxMaxima. */
++#ifdef __AMIGA__
++#include "wxMaxima.h"
++#include "EventIDs.h"
++#include "Version.h"
++#include "worksheet/Worksheet.h"
++#include "cells/GroupCell.h"
++#include <wx/app.h>
++#include <wx/config.h>
++#include <wx/filename.h>
++#include <wx/openlayout/arexx.h>
++
++class AmigaRexx
++{
++public:
++  static void Start(wxMaxima *frame);
++private:
++  static bool Busy(wxMaxima *f)
++  {
++    return f->m_maximaBusy ||
++      (f->GetWorksheet() && !f->GetWorksheet()->GetEvaluationQueue().Empty());
++  }
++  static void Menu(wxMaxima *f, int id)
++  {
++    wxCommandEvent ev(wxEVT_MENU, id);
++    ev.SetEventObject(f);
++    f->GetEventHandler()->ProcessEvent(ev);
++  }
++};
++
++void AmigaRexx::Start(wxMaxima *f)
++{
++  wxARexxPort *rexx = new wxARexxPort("WXMAXIMA", "wxMaxima " WXMAXIMA_VERSION);
++  rexx->Add("OPEN", "FILE/A", [f](wxARexxCommand &c) {
++    wxString file = c.Str(0);
++    if (!wxFileExists(file))
++      c.SetError(10, 205);      // object not found
++    else if (!f->m_fileIO.OpenFile(file))
++      c.SetError(10);
++  });
++  rexx->Add("SAVE", "FILE/K", [f](wxARexxCommand &c) {
++    // never the Save As requester for a script: FILE names the file, an
++    // untitled worksheet without it answers RC 10 (210, required argument)
++    Worksheet *w = f->GetWorksheet();
++    if (!w) {
++      c.SetError(20);
++      return;
++    }
++    if (c.Has(0))
++      w->SetCurrentFile(c.Str(0));
++    else if (w->GetCurrentFile().IsEmpty()) {
++      c.SetError(10, 210);
++      return;
++    }
++    if (!f->m_fileIO.SaveFile())
++      c.SetError(10);
++  });
++  rexx->Add("EVAL", "EXPR/A,WAIT/S", [f, rexx](wxARexxCommand &c) {
++    Worksheet *w = f->GetWorksheet();
++    if (!w) {
++      c.SetError(20);
++      return;
++    }
++    wxString expr = c.Str(0);
++    expr.Trim(true).Trim(false);
++    if (expr.empty()) {
++      c.SetError(10);
++      return;
++    }
++    if (!expr.EndsWith(wxS(";")) && !expr.EndsWith(wxS("$")))
++      expr += wxS(";");
++    // as MenuCommand(), keeping the new cell to read its answer from
++    w->OpenHCaret(expr);
++    GroupCell *g = w->GetActiveCell() ? w->GetActiveCell()->GetGroup() : nullptr;
++    if (!g) {
++      c.SetError(10);
++      return;
++    }
++    w->AddCellToEvaluationQueue(g);
++    f->m_evaluator.TriggerEvaluation();
++    w->RequestRedraw();
++    if (!c.Switch(1))
++      return;
++    // wxMaxima reads Maxima's answer and redraws in its idle handlers, and
++    // the port's wait runs messages and pending events but no idle time:
++    // give it some each round, or Busy() never ends
++    if (!rexx->WaitFor(c, [f]() {
++          if (wxTheApp)
++            wxTheApp->ProcessIdle();
++          return !Busy(f);
++        }, 600000))
++      return;
++    // RESULT: the cell's output as text, if the cell is still there
++    if (!f->GetWorksheet())
++      return;
++    for (GroupCell *t = f->GetWorksheet()->GetTree(); t; t = t->GetNext())
++      if (t == g) {
++        if (Cell *out = g->GetOutput()) {
++          wxString text = out->ListToString();
++          c.SetResult(text.Trim(true).Trim(false));
++        }
++        return;
++      }
++  });
++  rexx->Add("EVALALL", "", [f](wxARexxCommand &) {
++    Menu(f, EventIDs::menu_evaluate_all);
++  });
++  rexx->Add("INTERRUPT", "", [f](wxARexxCommand &) {
++    Menu(f, EventIDs::menu_interrupt_id);
++  });
++  rexx->Add("BUSY", "", [f](wxARexxCommand &c) {
++    c.SetResult(Busy(f) ? "1" : "0");
++  });
++  rexx->Add("QUIT", "FORCE/S", [f](wxARexxCommand &c) {
++    if (f->IsBeingDeleted())
++      return;
++    if (!c.Switch(0) && f->SaveNecessary()) {
++      // never a requester for a script: a named worksheet is saved, an
++      // untitled one answers RC 5 (SAVE it first, or QUIT FORCE)
++      if (!f->GetWorksheet() || f->GetWorksheet()->GetCurrentFile().IsEmpty()) {
++        c.SetError(5);
++        return;
++      }
++      if (!f->m_fileIO.SaveFile()) {
++        c.SetError(10);
++        return;
++      }
++    }
++    // after the reply: the window goes (its destructor ends Maxima), this
++    // port with it (wxEVT_DESTROY below), and the app with its last window
++    f->CallAfter([f] {
++      if (f->IsBeingDeleted())
++        return;
++      wxConfig::Get()->Write(wxS("lastPath"), f->m_lastPath);
++      f->Destroy();
++    });
++  });
++  rexx->Add("ACTIVATE", "", [f](wxARexxCommand &) {
++    if (f->IsIconized())
++      f->Iconize(false);
++    f->Show();
++    f->Raise();
++  });
++  rexx->Add("DEACTIVATE", "", [f](wxARexxCommand &) {
++    f->Iconize(true);
++  });
++  rexx->Open();
++  f->Bind(wxEVT_DESTROY, [f, rexx](wxWindowDestroyEvent &ev) {
++    if (ev.GetEventObject() == f)
++      delete rexx;
++    ev.Skip();
++  });
++}
++
++void AmigaRexxStart(wxMaxima *frame) { AmigaRexx::Start(frame); }
++#endif
+diff -ruN wxm-a/src/CMakeLists.txt wxm-b/src/CMakeLists.txt
+--- a/src/CMakeLists.txt	2026-10-28 19:23:42.000000000 +0000
++++ b/src/CMakeLists.txt	2026-11-07 13:42:59.056324218 +0000
+@@ -163,6 +163,7 @@
+     MathParser.cpp
+     Maxima.cpp
+     MaximaIPC.cpp
++    AmigaRexx.cpp
+     MaximaCommandMenus.cpp
+     MaximaResponseReader.cpp
+     MaximaProcessManager.cpp
+diff -ruN wxm-a/src/main.cpp wxm-b/src/main.cpp
+--- a/src/main.cpp	2026-10-28 19:23:42.000000000 +0000
++++ b/src/main.cpp	2026-11-07 13:42:59.071499520 +0000
+@@ -1022,6 +1022,12 @@
+     initialContents += block;
+   }
+   wxMaxima *frame = new wxMaxima(nullptr, wxID_ANY, title, file, initialContents);
++#ifdef __AMIGA__
++  {
++    extern void AmigaRexxStart(wxMaxima *frame);
++    AmigaRexxStart(frame);
++  }
++#endif
+   frame->EvalOnStartup(evalOnStartup);
+   frame->ExitAfterEval(exitAfterEval);
+   frame->Show(true);
+diff -ruN wxm-a/src/wxMaxima.h wxm-b/src/wxMaxima.h
+--- a/src/wxMaxima.h	2026-10-28 19:23:42.000000000 +0000
++++ b/src/wxMaxima.h	2026-11-07 13:42:59.054324242 +0000
+@@ -734,6 +734,10 @@
+ 
+ #endif
+   friend class MaximaIPC;
++#ifdef __AMIGA__
++  //! the ARexx port (AmigaRexx.cpp) reaches the file loaders and the busy flag
++  friend class AmigaRexx;
++#endif
+   //! The extracted menu-command handlers reach wxMaxima's services (MenuCommand,
+   //! the wizards, m_configuration) through this friendship.
+   friend class MaximaCommandMenus;

@@ -1,0 +1,35 @@
+wxMathML.lisp: the autocompletion symbol list names each symbol once
+
+--- a/src/wxMathML.lisp
++++ b/src/wxMathML.lisp
+@@ -2512,15 +2512,21 @@
+ ;; A function that determines all symbols for autocompletion
+ (defun wxPrint_autocompletesymbols ()
+   (format t "<wxxml-symbols>")
+-  (do-symbols
+-      (s (find-package 'maxima))
+-    (let ((str (format nil "~a" s)))
+-      (if (< 1 (length str))
+-          (if (string= (subseq str 0 1) "$")
+-              (format t "<value>~a</value>"
+-                      (wxxml-fix-string (format nil "~a"
+-                                                (stripdollar (maybe-invert-string-case str))))
+-                      )))))
++  ;; DO-SYMBOLS may visit a symbol more than once (CLHS). The Amiga CLISP
++  ;; visits each one some 500 times, which made this list 2.4 MB; wxMaxima
++  ;; spent minutes reading it before the user's first answer. Once each.
++  (let ((seen (make-hash-table :test #'eq)))
++    (do-symbols
++        (s (find-package 'maxima))
++      (unless (gethash s seen)
++        (setf (gethash s seen) t)
++        (let ((str (format nil "~a" s)))
++          (if (< 1 (length str))
++              (if (string= (subseq str 0 1) "$")
++                  (format t "<value>~a</value>"
++                          (wxxml-fix-string (format nil "~a"
++                                                    (stripdollar (maybe-invert-string-case str))))
++                          )))))))
+   ;;ezunits publishes all known units in a function.
+   (if (boundp '$known_units)
+       (no-warning

@@ -26,7 +26,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static const char version[] = "$VER: maxima 0.1 (6.11.2026) AmiCradle Team";
+static const char version[] = "$VER: maxima 0.2 (10.11.2026) AmiCradle Team";
 
 #define LISP_STACK 2000000
 
@@ -48,6 +48,37 @@ static int exists(const char *name)
     if (!l) return 0;
     UnLock(l);
     return 1;
+}
+
+/* the file's date; 0 when it is not there */
+static int date_of(const char *name, struct DateStamp *ds)
+{
+    struct FileInfoBlock *fib;
+    BPTR l = Lock((CONST_STRPTR)name, ACCESS_READ);
+    int ok = 0;
+    if (!l) return 0;
+    if ((fib = AllocDosObject(DOS_FIB, NULL)) != NULL) {
+        if (Examine(l, fib)) { *ds = fib->fib_Date; ok = 1; }
+        FreeDosObject(DOS_FIB, fib);
+    }
+    UnLock(l);
+    return ok;
+}
+
+/* maxima.mem older than loadmaxima.lisp: an update brought a new load list,
+   so the image is made again (the old one is kept as maxima.mem.old) */
+static void retire_old_image(void)
+{
+    char mem[600], list[600], old[600];
+    struct DateStamp dm, dl;
+    snprintf(mem, sizeof mem, "%s/maxima.mem", dir);
+    snprintf(list, sizeof list, "%s/loadmaxima.lisp", dir);
+    if (!date_of(mem, &dm) || !date_of(list, &dl) || CompareDates(&dm, &dl) <= 0)
+        return;     /* CompareDates > 0: the image is the older one */
+    snprintf(old, sizeof old, "%s/maxima.mem.old", dir);
+    DeleteFile((CONST_STRPTR)old);
+    if (Rename((CONST_STRPTR)mem, (CONST_STRPTR)old))
+        fprintf(stderr, "maxima: Maxima was updated, its memory image is made again\n");
 }
 
 /* append s to line as one AmigaDOS argument. Quoted when asked, or when it
@@ -110,6 +141,7 @@ int main(int argc, char **argv)
     unix_view(dir, udir, sizeof udir);
     SetVar((CONST_STRPTR)"MAXIMA_PREFIX", (CONST_STRPTR)udir, -1, GVF_LOCAL_ONLY);
 
+    retire_old_image();
     snprintf(path, sizeof path, "%s/maxima.mem", dir);
     if (!exists(path)) {
         /* first start: load CLISP and Maxima, save maxima.mem */

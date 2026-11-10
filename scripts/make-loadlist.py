@@ -26,6 +26,16 @@ with open(out, "w") as f:
     f.write(";;; Maxima %s for AmigaCLISP: load Maxima, save MAXIMA_PREFIX/maxima.mem.\n" % version)
     f.write(";;; Made by make-loadlist.py from Maxima's own load order (%d files).\n" % len(items))
     f.write("(in-package :cl-user)\n")
+    # maxima.system defines and exports cl-user:*maxima-build-time* before
+    # it loads anything (build_info() and wxMathML.lisp's wxbuild_info()
+    # read it); the load list leaves maxima.system out, so it goes here.
+    # Without it, wxMathML.lisp stops at read time, before it prints the
+    # key wxMaxima waits for, and no cell is ever evaluated.
+    import os, time
+    t = time.gmtime(int(os.environ.get("SOURCE_DATE_EPOCH", os.path.getmtime(log))))
+    f.write("(defvar *maxima-build-time* '(%d %d %d %d %d %d %d nil 0))\n"
+            % (t.tm_sec, t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon, t.tm_year, t.tm_wday))
+    f.write("(export '*maxima-build-time*)\n")
     f.write("(setf *read-default-float-format* 'double-float)\n")
     f.write("(defvar *amiga-maxima-prefix* (ext:getenv \"MAXIMA_PREFIX\"))\n")
     f.write("(defun amiga-maxima-file (kind name)\n"
@@ -36,6 +46,21 @@ with open(out, "w") as f:
     for k, n in items:
         f.write("  (:%s \"%s\")\n" % (k, n))
     f.write("  ))\n  (load (amiga-maxima-file (first f) (second f)) :verbose nil))\n")
+    # An AmigaDOS name ("SYS:Prefs/Env-Archive", the HOME Maxima builds its
+    # userdir from) has no device part for this CLISP, so Maxima's
+    # maxima-parse-dirstring made it "/SYS:Prefs/...", and the first probe
+    # there put up "Please insert volume /SYS" and held Maxima until someone
+    # answered it. Give it the unix-style name the other paths use
+    # ("/SYS/Prefs/Env-Archive/").
+    f.write("(in-package :maxima)\n"
+            "(let ((parse (symbol-function 'maxima-parse-dirstring)))\n"
+            "  (setf (symbol-function 'maxima-parse-dirstring)\n"
+            "        (lambda (str)\n"
+            "          (let ((c (position #\\: str)) (s (position #\\/ str)))\n"
+            "            (funcall parse (if (and c (> c 0) (or (null s) (< c s)))\n"
+            "                               (concatenate 'string \"/\" (subseq str 0 c) \"/\" (subseq str (1+ c)))\n"
+            "                               str))))))\n"
+            "(in-package :cl-user)\n")
     # AmigaOS has no /usr volume: Maxima's message catalogues are looked for
     # only under MAXIMA_PREFIX (Maxima adds that at start)
     f.write("(setq intl::*locale-directories* nil)\n")

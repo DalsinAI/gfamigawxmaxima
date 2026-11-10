@@ -37,13 +37,45 @@ wxMaxima/
     loadmaxima.lisp     Maxima's load order
     makeimage.lisp      the first start's script
     maxima.mem          made on the Amiga at first start (a memory image belongs to the machine it is made on)
+                        (made again when an update brings a newer loadmaxima.lisp; the old one stays as maxima.mem.old)
 ```
 
 wxMaxima finds `Maxima/maxima` beside itself, starts it with `-s <port>` and talks to it over a local socket, as on every other system.
 
+## ARexx
+
+Each wxMaxima window has an ARexx port, `WXMAXIMA.1` (`WXMAXIMA.2` for a second window), from the GFOpenWX Toolkit's `wxARexxPort` on arexx.class.
+
+| Command | Does |
+| --- | --- |
+| `OPEN FILE/A` | open a worksheet (`.wxmx`, `.wxm`) or a `.mac` file |
+| `SAVE FILE/K` | save the worksheet, as FILE if given; an untitled worksheet without FILE answers RC 10 (no Save As requester) |
+| `EVAL EXPR/A,WAIT/S` | a new cell with EXPR (`;` added if it has none), evaluated; WAIT answers once Maxima has finished, with the cell's output in RESULT |
+| `EVALALL` | evaluate every cell |
+| `INTERRUPT` | stop the evaluation |
+| `BUSY` | RESULT: 1 while Maxima is working, else 0 |
+| `QUIT FORCE/S` | close the window and Maxima with it; a named worksheet is saved first, an untitled unsaved one answers RC 5 (no requester); FORCE does not save. Nothing is left behind: no window, no Maxima, no port |
+| `ACTIVATE`, `DEACTIVATE` | the window to the front, or iconified |
+| `VERSION`, `HELP`, `FAULT` | the toolkit's standard commands |
+
+```
+/* wxMaxima: integrate, wait, save */
+OPTIONS RESULTS
+ADDRESS 'WXMAXIMA.1'
+'EVAL "integrate(x^2, x);" WAIT'
+SAY result
+'SAVE FILE RAM:integrate.wxmx'
+```
+
+Return codes: 0 OK, 5 warning (QUIT with unsaved, untitled work), 10 error, 20 unknown command or no worksheet.
+
+`Rexx/Eval.rexx` (in the package's Rexx drawer) is an example; `tests/arexx.rexx` checks the whole port (`rx tests/arexx.rexx` with wxMaxima running).
+
 ## Changes to wxMaxima
 
-`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), and a longer wait for Maxima to connect.
+`patches/`: Maxima's place in the drawer, the variables Maxima must see set in wxMaxima's own process (an Amiga CLI takes its parent's variables, it has no environment block), a longer wait for Maxima to connect, the ARexx port (`src/AmigaRexx.cpp`), and an autocompletion list that names each symbol once (the Amiga CLISP visits each symbol some 500 times in DO-SYMBOLS, which made the list 2.4 MB and held up the first answer for minutes).
+
+`scripts/make-loadlist.py` (Maxima's image): defines `*maxima-build-time*`, which Maxima's own build sets in a file the load list leaves out, and gives Maxima's directory parser AmigaDOS names in the unix form the other paths use (`SYS:Prefs/Env-Archive` becomes `/SYS/Prefs/Env-Archive/`), so the user directory is not looked for on a volume called `/SYS`.
 
 ## Licence
 
