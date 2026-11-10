@@ -1,0 +1,80 @@
+diff --git a/src/Maxima.cpp b/src/Maxima.cpp
+index 64b1a14..9e1d616 100644
+--- a/src/Maxima.cpp
++++ b/src/Maxima.cpp
+@@ -41,6 +41,17 @@
+ 
+ #include <algorithm>
+ 
++// DIAG (lab only): the raw bytes both ways
++#include <cstdio>
++static void MxRaw(const char *file, const char *what, const char *data, std::size_t n) {
++  FILE *f = std::fopen(file, "ab");
++  if (!f) return;
++  long size = std::ftell(f);
++  std::fprintf(f, "\n==== %ld %s %lu bytes ====\n", (long)wxGetLocalTimeMillis().GetValue(), what, (unsigned long)n);
++  if (size < 400000) std::fwrite(data, 1, n > 4096 ? 4096 : n, f);
++  std::fclose(f);
++}
++
+ wxDEFINE_EVENT(EVT_MAXIMA, wxThreadEvent);
+ 
+ #define INPUT_RESTART_PERIOD 100
+@@ -120,6 +131,7 @@ void Maxima::AmigaSocketEvent(wxSocketEvent &event) {
+     const std::size_t got = m_socket->LastReadCount();
+     if (got == 0)
+       break;
++    MxRaw("T:wxm-in.log", "in", buf, got);
+     m_amigaRawInput.append(buf, got);
+     if (got < sizeof(buf))
+       break;
+@@ -173,6 +185,7 @@ void Maxima::AmigaSend() {
+     const auto &data = toWrite[i];
+     m_socket->Write(data.data(), data.size());
+     const std::size_t written = m_socket->LastWriteCount();
++    MxRaw("T:wxm-out.log", m_socket->Error() ? "out (error)" : "out", data.data(), written);
+     if (m_socket->Error() && (m_socket->LastError() != wxSOCKET_WOULDBLOCK)) {
+       wxThreadEvent *sendevent = new wxThreadEvent(EVT_MAXIMA);
+       sendevent->SetInt(WRITE_ERROR);
+diff --git a/src/MaximaProcessManager.cpp b/src/MaximaProcessManager.cpp
+index daebe23..f8c5dc3 100644
+--- a/src/MaximaProcessManager.cpp
++++ b/src/MaximaProcessManager.cpp
+@@ -1,3 +1,4 @@
++#include <cstdio>
+ // -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
+ //
+ //  Copyright (C) 2026 Gunter Königsmann <wxMaxima@physikbuch.de>
+@@ -363,6 +364,7 @@ bool MaximaProcessManager::StartMaxima(bool force) {
+       }
+       m_wxMaxima.m_maximaAuthString = wxBase64Encode(membuf);
+       environment["MAXIMA_AUTH_CODE"] = m_wxMaxima.m_maximaAuthString;
++      { FILE *df = fopen("T:wxm-auth.log", "a"); if (df) { fprintf(df, "auth code [%s]\n", (const char *)m_wxMaxima.m_maximaAuthString.utf8_str()); fclose(df); } }
+ 
+ #ifdef __AMIGA__
+       // AmigaOS: wxExecute starts Maxima in a CLI of its own, which takes
+diff --git a/src/MaximaResponseReader.cpp b/src/MaximaResponseReader.cpp
+index beca6c5..fbcb2f8 100644
+--- a/src/MaximaResponseReader.cpp
++++ b/src/MaximaResponseReader.cpp
+@@ -1,3 +1,4 @@
++#include <cstdio>
+ // -*- mode: c++; c-file-style: "linux"; c-basic-offset: 2; indent-tabs-mode: nil -*-
+ //
+ //  Copyright (C) 2026 Gunter Königsmann <wxMaxima@physikbuch.de>
+@@ -212,6 +213,7 @@ void MaximaResponseReader::ReadFirstPrompt(const wxString &data) {
+     const MaximaAuthLine authLine =
+       TakeMaximaAuthLine(buffer, std::string(m_wxMaxima.m_maximaAuthString.utf8_str()));
+     m_wxMaxima.m_firstPromptBuffer = wxString::FromUTF8(buffer);
++    { FILE *df = fopen("T:wxm-auth.log", "a"); if (df) { fprintf(df, "first prompt: auth line %d\n", (int)authLine); fclose(df); } }
+     switch (authLine) {
+     case MaximaAuthLine::accepted:
+       MaximaAuthenticated();
+@@ -379,6 +381,7 @@ void MaximaResponseReader::ReadMiscText(const wxString &data) {
+ }
+ 
+ void MaximaResponseReader::ReadSuppressedOutput(const wxString &data) {
++  { FILE *df = fopen("T:wxm-auth.log", "a"); if (df) { fprintf(df, "suppressed output (authenticated %d): %.300s\n", (int)m_wxMaxima.m_maximaAuthenticated, (const char *)data.utf8_str()); fclose(df); } }
+   if(m_wxMaxima.m_maximaAuthenticated)
+     return;
+ 

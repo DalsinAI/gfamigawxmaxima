@@ -235,6 +235,7 @@ cp "$HERE/README.md" "$P/ReadMe" 2>/dev/null || :
 mkdir -p "$P/Rexx" "$P/tests"; cp "$HERE"/Rexx/*.rexx "$P/Rexx/"   # the ARexx example (README: ARexx)
 cp "$HERE/tests/arexx.rexx" "$P/tests/"   # the ARexx port test
 cp "$SRC/COPYING" "$P/COPYING"
+echo "diag build: T:wxm-*.log" > "$P/DIAG-BUILD"
 ( cd "$WORK/pkg" && find . -type f | sort | xargs sha256sum ) > "$OUT/SHA256SUMS"
 du -sh "$P" | sed 's/^/package: /'
 # the package as one tar.gz, and as an LhA archive for the Amiga (our own

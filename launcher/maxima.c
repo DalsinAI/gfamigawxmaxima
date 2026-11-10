@@ -139,6 +139,20 @@ int main(int argc, char **argv)
         return RETURN_FAIL;
     }
     unix_view(dir, udir, sizeof udir);
+    { /* DIAG (lab only): what this launcher was given */
+        FILE *df = fopen("T:wxm-launcher.log", "a");
+        if (df) {
+            const char *a = getenv("MAXIMA_AUTH_CODE");
+            char vb[8];
+            LONG gl = GetVar((CONST_STRPTR)"MAXIMA_AUTH_CODE", (STRPTR)vb, sizeof vb, GVF_LOCAL_ONLY | GVF_BINARY_VAR);
+            LONG gg = GetVar((CONST_STRPTR)"MAXIMA_AUTH_CODE", (STRPTR)vb, sizeof vb, GVF_GLOBAL_ONLY | GVF_BINARY_VAR);
+            fprintf(df, "launcher: getenv auth %ld chars [%.12s], GetVar local %ld global %ld, cli %p, args:",
+                    a ? (long)strlen(a) : -1L, a ? a : "", (long)gl, (long)gg, (void *)Cli());
+            for (i = 1; i < argc; i++) fprintf(df, " %s", argv[i]);
+            fprintf(df, "\n");
+            fclose(df);
+        }
+    }
     SetVar((CONST_STRPTR)"MAXIMA_PREFIX", (CONST_STRPTR)udir, -1, GVF_LOCAL_ONLY);
 
     retire_old_image();
