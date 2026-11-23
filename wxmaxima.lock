@@ -11,7 +11,7 @@ MAXIMA_SHA256=0bc4b5e11fe153ef20b24a3a816b668ece5378cc738fa24ca426b62fd6d8fc37
 # that compiles Maxima and the Amiga lisp that runs it (0.1 rc1)
 CLISP_REPO=https://github.com/DalsinAI/amigaclisp
 CLISP_COMMIT=66506f22410287ccb853c13a5c7f3881451dd824
-# GFOpenWX Toolkit (wxWidgets on GFOpenLayout): v0.1.0-rc4, with wxARexxPort and
+# GFOpenWX Toolkit (wxWidgets on GFOpenLayout): main (v0.1.0-rc4 and later), with wxARexxPort and
 # the log window, notifications, splines and SVG wxMaxima needs
 WXT_REPO=https://github.com/DalsinAI/gfopenwxtoolkit
 WXT_COMMIT=2b2db788892b0379438ae7201821b93789610861   # toolkit main: GFOpenLayout UI through gfopenlayout.library 12+ (gfopenwxtoolkit PR 1)
