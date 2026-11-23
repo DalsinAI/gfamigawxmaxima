@@ -4,6 +4,10 @@ wxMaxima, the worksheet for the Maxima computer algebra system, for AmigaOS 3: 6
 
 Status: work in progress, not yet run on an Amiga.
 
+## Needs
+
+`gfopenlayout.library` 12 or later in `LIBS:`. wxMaxima's windows are drawn by GFOpenLayout through that library, not a copy built into the program (GFOffice Libs ships version 25). Without it wxMaxima says "This needs gfopenlayout.library 12 or later in LIBS:" and stops.
+
 ## What is built
 
 | Part | Version | From |
